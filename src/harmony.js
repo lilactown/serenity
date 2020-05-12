@@ -2,10 +2,16 @@
  * @fileoverview added by tsickle
  * @suppress {checkTypes,constantProperty,extraRequire,missingOverride,missingReturn,unusedPrivateMembers,uselessCode} checked by tsc
  */
-//goog.module('harmony');
+goog.module('harmony');
+
+// not sure what this line is for
 //var module = module || { id: 'src/index.ts' };
+
+// this is not necessary and unavailable
 //goog.require('_.tslib');
-//goog.module.declareLegacyNamespace();
+
+// adding this to try to help CLJS
+goog.module.declareLegacyNamespace();
 
 /** @typedef {string} */
 var txID;
