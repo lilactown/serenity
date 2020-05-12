@@ -1,5 +1,5 @@
 (ns melody.core
-  (:require ["../harmony.js" :as harmony]
+  (:require [lilactown.harmony :as harmony]
             [clojure.set :as set]))
 
 
@@ -54,6 +54,7 @@
       ;; TODO defer setting of depends-on until after
       (let [depends-on' (set *reactive-context*)]
         (doseq [dep (set/difference depends-on depends-on')]
+          (prn "n")
           (-remove-dep dep this))
         (set! depends-on depends-on')))
     (doseq [dep dependents]
