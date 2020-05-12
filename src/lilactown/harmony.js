@@ -2,7 +2,7 @@
  * @fileoverview added by tsickle
  * @suppress {checkTypes,constantProperty,extraRequire,missingOverride,missingReturn,unusedPrivateMembers,uselessCode} checked by tsc
  */
-goog.module('harmony');
+goog.module('lilactown.harmony');
 
 // not sure what this line is for
 //var module = module || { id: 'src/index.ts' };
