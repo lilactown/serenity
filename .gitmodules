@@ -1,0 +1,3 @@
+[submodule "lib/harmony"]
+	path = lib/harmony
+	url = git@github.com:Lokeh/harmony.git
