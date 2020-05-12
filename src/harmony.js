@@ -2,9 +2,11 @@
  * @fileoverview added by tsickle
  * @suppress {checkTypes,constantProperty,extraRequire,missingOverride,missingReturn,unusedPrivateMembers,uselessCode} checked by tsc
  */
-goog.module('lilactown.harmony');
-var module = module || { id: 'src/index.ts' };
-goog.require('_.tslib');
+//goog.module('harmony');
+//var module = module || { id: 'src/index.ts' };
+//goog.require('_.tslib');
+//goog.module.declareLegacyNamespace();
+
 /** @typedef {string} */
 var txID;
 /** @typedef {number} */
