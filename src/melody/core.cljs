@@ -1,2 +1,2 @@
 (ns melody.core
-  (:require [lilactown.melody]))
+  (:require [lilactown.harmony]))
