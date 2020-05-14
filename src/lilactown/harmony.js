@@ -2,16 +2,7 @@
  * @fileoverview added by tsickle
  * @suppress {checkTypes,constantProperty,extraRequire,missingOverride,missingReturn,unusedPrivateMembers,uselessCode} checked by tsc
  */
-goog.module('lilactown.harmony');
-
-// not sure what this line is for
-//var module = module || { id: 'src/index.ts' };
-
-// this is not necessary and unavailable
-//goog.require('_.tslib');
-
-// adding this to try to help CLJS
-goog.module.declareLegacyNamespace();
+goog.provide('lilactown.harmony');
 
 /** @typedef {string} */
 var txID;
@@ -175,7 +166,7 @@ if (false) {
  * @record
  */
 function IBranch() { }
-exports.IBranch = IBranch;
+lilactown.harmony.IBranch = IBranch;
 if (false) {
     /** @type {boolean} */
     IBranch.prototype.isCommitted;
@@ -414,7 +405,7 @@ if (false) {
 function branch({ autoRebase } = { autoRebase: false }) {
     return new Branch(autoRebase, ctx.current);
 }
-exports.branch = branch;
+lilactown.harmony.branch = branch;
 /**
  * @template T
  * @param {T} v
@@ -423,7 +414,7 @@ exports.branch = branch;
 function ref(v) {
     return new Ref(v);
 }
-exports.ref = ref;
+lilactown.harmony.ref = ref;
 /**
  * @template T
  * @param {!IRef<T>} ref
@@ -435,7 +426,7 @@ function deref(ref) {
     }
     return ref.unsafeRead();
 }
-exports.deref = deref;
+lilactown.harmony.deref = deref;
 /**
  * @template T
  * @param {!IRef<T>} ref
@@ -448,7 +439,7 @@ function set(ref, v) {
     }
     throw new Error("Cannot set ref outside of transaction");
 }
-exports.set = set;
+lilactown.harmony.set = set;
 /**
  * @template T
  * @param {!IRef<T>} ref
@@ -459,7 +450,7 @@ exports.set = set;
 function alter(ref, f, ...args) {
     return set(ref, f(deref(ref), ...args));
 }
-exports.alter = alter;
+lilactown.harmony.alter = alter;
 /**
  * @template T
  * @param {!IRef<T>} ref
@@ -468,4 +459,4 @@ exports.alter = alter;
 function ensure(ref) {
     return set(ref, deref(ref));
 }
-exports.ensure = ensure;
+lilactown.harmony.ensure = ensure;
