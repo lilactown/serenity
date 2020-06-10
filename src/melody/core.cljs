@@ -116,6 +116,7 @@
       (js/Set.)))
 
 
+;; nodes are lazy!
 (deftype Node [state f xf
                ^:mutable initialized? ^:mutable
                to-edges ^:mutable from-edges ^:mutable
@@ -189,6 +190,7 @@
       to-edges)))
 
 
+;; sinks are eager!
 (deftype Sink [state f ^:mutable from-edges ^:mutable watch ^:mutable order meta]
   IDeref
   (-deref [_]
