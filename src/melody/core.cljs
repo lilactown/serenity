@@ -27,6 +27,10 @@
   (-remove-edge [a b]))
 
 
+(defprotocol ISink
+  (-dispose [sink]))
+
+
 (def ^:dynamic *reactive-context*)
 
 
@@ -108,25 +112,39 @@
       (js/Set.)))
 
 
-;; `edges` are things that depend on me
-;; TODO make this lazy, evaluated based on sink
-(deftype Node [state f xf to-edges ^:mutable from-edges ^:mutable order meta]
+(deftype Node [state f xf
+               ^:mutable initialized? ^:mutable
+               to-edges ^:mutable from-edges ^:mutable
+               order meta]
   IMeta
   (-meta [_]
     meta)
 
   IDeref
   (-deref [this]
-    (when (some? *reactive-context*)
-      (.add *reactive-context* this))
+    (if (some? *reactive-context*)
+      (do (when-not initialized?
+            (-calculate this))
+          (.add ^js *reactive-context* this))
+      ;; not in a reactive context
+      (when-not initialized?
+        ;; create new branch then calculatecalculate
+        (-> (harmony/branch)
+            (.add #(-calculate this))
+            (.commit))))
     (harmony/deref state))
 
   INode
   (-order [_] order)
   (-add-edge [_ node]
-    (.add to-edges node))
-  (-remove-edge [_ node]
-    (.delete to-edges node))
+    (.add ^js to-edges node))
+  (-remove-edge [this node]
+    (.delete ^js to-edges node)
+    (when (zero? (.-size ^js to-edges))
+      (set! initialized? false)
+      ;; disposing. remove it from the graph
+      (doseq [node from-edges]
+        (-remove-edge node this))))
 
   IReactive
   (-set-order [_ n]
@@ -158,16 +176,26 @@
       ;; set current from-edges
       (set! from-edges from-edges')
 
+      (set! initialized? true)
+
       ;; return edges to be calculated
       to-edges)))
 
 
-(deftype Sink [state f ^:mutable from-edges ^:mutable watches ^:mutable order meta]
+(deftype Sink [state f ^:mutable from-edges ^:mutable watch ^:mutable order meta]
   IDeref
   (-deref [_]
     (when *reactive-context*
       (throw (ex-info "Cannot deref sink inside of a node" {})))
     (harmony/deref state))
+
+  ISink
+  (-dispose [this]
+    ;; try to allow this sink and any of it's dependencies to be GCd
+    (doseq [node from-edges]
+      (-remove-edge node this))
+    (set! from-edges nil)
+    (set! watch nil))
 
   IReactive
   (-set-order [_ n]
@@ -193,18 +221,11 @@
       ;; set current from-edges
       (set! from-edges from-edges')
 
-      ;; run watches
-      (doseq [[key f] watches]
-        (f key this old (harmony/deref state)))
+      ;; run watch
+      (watch this old (harmony/deref state))
 
       ;; sinks never have to-edges
-      nil))
-
-  IWatchable
-  (-add-watch [_ key f]
-    (set! watches (assoc watches key f)))
-  (-remove-watch [this key]
-    (set! watches (dissoc watches key))))
+      nil)))
 
 
 (defn source
@@ -218,6 +239,7 @@
               (harmony/ref nil)
               f
               nil ;; `xf`
+              false ;; `initialized?`
               (js/Set.) ;; `from-edges`
               (js/Set.) ;; `to-edges`
               ;; assume at least order 1
@@ -225,22 +247,23 @@
               ;; meta
               nil)]
     ;; run first calculation eagerly
-    (-> (harmony/branch)
+    #_(-> (harmony/branch)
         (.add #(-calculate node))
         (.commit))
     node))
 
 
 (defn sink
-  [f]
+  [input-fn on-change]
   (let [s (->Sink
            (harmony/ref nil)
-           f
+           input-fn
            (js/Set.) ;; from-edges
-           {} ;; watches
+           on-change
            1 ;; default order
            ;; meta
            nil)]
+    ;; add initial on-change
     (-> (harmony/branch)
         (.add #(-calculate s))
         (.commit))
@@ -263,7 +286,7 @@
   (def d (node #(do (prn 'd)
                     (+ @b @c))))
 
-  (def s (sink #(deref d)))
+  (def s (sink #(deref d) (fn [_ o n] (prn o n))))
 
   (-order a)
 
@@ -283,6 +306,5 @@
 
   @d
 
-  (add-watch s :log (fn [_ _ o n] (prn o n)))
-  (remove-watch s :log)
+  (-dispose s)
 )
