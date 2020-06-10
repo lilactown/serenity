@@ -74,7 +74,7 @@
   (-deref [this]
     (when (some? *reactive-context*)
       ;; `js/Set`
-      (.add *reactive-context* this))
+      (.add ^js *reactive-context* this))
     (harmony/deref ref))
 
   ISource
@@ -93,9 +93,9 @@
   INode
   (-order [_] 0)
   (-add-edge [_ node]
-    (.add edges node))
+    (.add ^js edges node))
   (-remove-edge [_ node]
-    (.delete edges node)))
+    (.delete ^js edges node)))
 
 
 (defn- set-difference
@@ -123,16 +123,14 @@
   IDeref
   (-deref [this]
     (if (some? *reactive-context*)
-      (do (when-not initialized?
-            (-calculate this))
-          (.add ^js *reactive-context* this))
+      (do
+        (.add ^js *reactive-context* this)
+        (when-not initialized?
+          ;; lazily calculate
+          (-calculate this))
+        (harmony/deref state))
       ;; not in a reactive context
-      (when-not initialized?
-        ;; create new branch then calculatecalculate
-        (-> (harmony/branch)
-            (.add #(-calculate this))
-            (.commit))))
-    (harmony/deref state))
+      (throw (ex-info "Can't deref node outside of node or sink" {}))))
 
   INode
   (-order [_] order)
@@ -211,7 +209,7 @@
       (doseq [node (set-difference from-edges from-edges')]
         (-remove-edge node this))
 
-      ;; TODO only do this for difference the other way maybe?
+      ;; TODO only do this for difference
       (doseq [node from-edges']
         (-add-edge node this)
         ;; set the order of this node to be at least as big as it's biggest edge
@@ -221,7 +219,7 @@
       ;; set current from-edges
       (set! from-edges from-edges')
 
-      ;; run watch
+      ;; TODO run watch after commit
       (watch this old (harmony/deref state))
 
       ;; sinks never have to-edges
@@ -246,10 +244,6 @@
               1
               ;; meta
               nil)]
-    ;; run first calculation eagerly
-    #_(-> (harmony/branch)
-        (.add #(-calculate node))
-        (.commit))
     node))
 
 
@@ -263,7 +257,7 @@
            1 ;; default order
            ;; meta
            nil)]
-    ;; add initial on-change
+    ;; run sink eagerly
     (-> (harmony/branch)
         (.add #(-calculate s))
         (.commit))
