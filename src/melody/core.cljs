@@ -1,6 +1,7 @@
 (ns melody.core
-  (:require [lilactown.harmony :as harmony]
-            [lilactown.dynamic-scope :as ds]))
+  (:require
+   [lilactown.harmony :as harmony]
+   [lilactown.poset :refer [poset]]))
 
 
 (comment
@@ -17,12 +18,13 @@
 
 
 (defprotocol IReactive
-  (-set-order [node n])
   (-calculate [node]))
 
+(defprotocol IOrdered
+  (-set-order [node n])
+  (-order [node]))
 
 (defprotocol INode
-  (-order [node])
   (-add-edge [a b])
   (-remove-edge [a b]))
 
@@ -50,17 +52,16 @@
 
 (defn- calculate-all-nodes!
   [initial-nodes]
-  (loop [nodes (js/Set. (to-array initial-nodes)) ;; copy set
+  (loop [nodes (apply poset -order initial-nodes)
          ;; TODO remove governor
          n 100]
-    ;; TODO don't sort every iteration
-    (when-some [node (first (sort-by -order nodes))]
+    (when-some [node (first nodes)]
       (when (> n 0)
         (when (< n 80)
           (prn :runaway))
         (doseq [node' (-calculate node)]
-          (.add nodes node'))
-        (.delete nodes node)
+          (conj! nodes node'))
+        (disj! nodes node)
         (recur nodes
                (dec n))))))
 
@@ -90,8 +91,11 @@
       (.commit))
     nil)
 
-  INode
+  IOrdered
   (-order [_] 0)
+  (-set-order [_ _] 0)
+
+  INode
   (-add-edge [_ node]
     (.add ^js edges node))
   (-remove-edge [_ node]
@@ -135,7 +139,6 @@
     (harmony/deref state))
 
   INode
-  (-order [_] order)
   (-add-edge [_ node]
     (.add ^js to-edges node))
   (-remove-edge [this node]
@@ -146,10 +149,13 @@
       (doseq [node from-edges]
         (-remove-edge node this))))
 
-  IReactive
+  IOrdered
+  (-order [_] order)
   (-set-order [_ n]
     (when (> n order)
       (set! order n)))
+
+  IReactive
   (-calculate [this]
     (let [from-edges' (js/Set.)]
       ;; run `f` with `*reactive-context*` set so that we can diff our from-edges
@@ -198,10 +204,13 @@
     (set! from-edges nil)
     (set! watch nil))
 
-  IReactive
+  IOrdered
+  (-order [_] order)
   (-set-order [_ n]
     (when (> n order)
       (set! order n)))
+
+  IReactive
   (-calculate [this]
     (let [from-edges' (js/Set.)
           old (harmony/deref state)]
