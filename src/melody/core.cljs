@@ -123,14 +123,16 @@
   IDeref
   (-deref [this]
     (if (some? *reactive-context*)
-      (do
-        (.add ^js *reactive-context* this)
-        (when-not initialized?
-          ;; lazily calculate
-          (-calculate this))
-        (harmony/deref state))
-      ;; not in a reactive context
-      (throw (ex-info "Can't deref node outside of node or sink" {}))))
+      (do (.add ^js *reactive-context* this)
+          (when-not initialized?
+            ;; lazily calculate
+            (-calculate this)))
+      (when-not initialized?
+        ;; lazily calculate
+        (-> (harmony/branch)
+            (.add #(-calculate this))
+            (.commit))))
+    (harmony/deref state))
 
   INode
   (-order [_] order)
@@ -156,25 +158,26 @@
         ;; TODO run `xf` for transducing
         (harmony/set state (f)))
 
-      ;;
-      ;; TODO this all needs to _after_ the transaction has committed.
-      ;;
+      (when (some? *reactive-context*)
+        ;;
+        ;; TODO this all needs to _after_ the transaction has committed.
+        ;;
 
-      ;; remove ourself from from-edges that are stale
-      (doseq [node (set-difference from-edges from-edges')]
-        (-remove-edge node this))
+        ;; remove ourself from from-edges that are stale
+        (doseq [node (set-difference from-edges from-edges')]
+          (-remove-edge node this))
 
-      ;; TODO only do this for difference the other way maybe?
-      (doseq [node from-edges']
-        (-add-edge node this)
-        ;; set the order of this node to be at least as big as it's biggest edge
-        ;; to enable topological sorting when calculating
-        (-set-order this (inc (-order node))))
+        ;; TODO only do this for difference the other way maybe?
+        (doseq [node from-edges']
+          (-add-edge node this)
+          ;; set the order of this node to be at least as big as it's biggest edge
+          ;; to enable topological sorting when calculating
+          (-set-order this (inc (-order node))))
 
-      ;; set current from-edges
-      (set! from-edges from-edges')
+        ;; set current from-edges
+        (set! from-edges from-edges')
 
-      (set! initialized? true)
+        (set! initialized? true))
 
       ;; return edges to be calculated
       to-edges)))
