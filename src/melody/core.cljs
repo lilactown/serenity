@@ -3,12 +3,13 @@
             [lilactown.dynamic-scope :as ds]))
 
 
-(extend-protocol IPrintWithWriter
-  js/Set
-  (-pr-writer [this writer opts]
-    (pr-sequential-writer
-     writer pr-writer "#object[Set #{" " " "}]"
-     opts this)))
+(comment
+  (extend-protocol IPrintWithWriter
+    js/Set
+    (-pr-writer [this writer opts]
+      (pr-sequential-writer
+       writer pr-writer "#object[Set [" " " "]]"
+       opts this))))
 
 
 (defprotocol ISource
@@ -16,14 +17,14 @@
 
 
 (defprotocol IReactive
-  (-add-edge [a b])
-  (-remove-edge [a b]))
+  (-set-order [node n])
+  (-calculate [node]))
 
 
 (defprotocol INode
   (-order [node])
-  (-set-order [node n])
-  (-calculate [node]))
+  (-add-edge [a b])
+  (-remove-edge [a b]))
 
 
 (def ^:dynamic *reactive-context*)
@@ -32,24 +33,39 @@
 (def ^:dynamic *transaction*)
 
 
-(defn- ordered-set
-  [coll]
-  (apply sorted-set-by (comp < #(-order %)) coll))
+;;
+;; The general approach we use for optimally calculating nodes is a topological
+;; sort, where each node's height is: max(height of nodes I depend on) + 1
+;;
+;; This is implemented across the code piece; first here, where we sort by the
+;; `-order` method return value, and `-set-order`, which ensures that `-order`
+;; is always monotonically increasing for a given node, and `-calculate` which
+;; handles calling `-set-order` after each calculation.
+;;
 
 
 (defn- calculate-all-nodes!
-  [initial-edges]
-  (loop [edges (ordered-set initial-edges)
-         n 10]
-    (when-some [edge (first edges)]
+  [initial-nodes]
+  (loop [nodes (js/Set. (to-array initial-nodes)) ;; copy set
+         ;; TODO remove governor
+         n 100]
+    ;; TODO don't sort every iteration
+    (when-some [node (first (sort-by -order nodes))]
       (when (> n 0)
-        (prn edge edges)
-        (recur (into (disj edges edge)
-                     (-calculate edge))
+        (when (< n 80)
+          (prn :runaway))
+        (doseq [node' (-calculate node)]
+          (.add nodes node'))
+        (.delete nodes node)
+        (recur nodes
                (dec n))))))
 
 
-(deftype Source [ref reducer edges]
+(deftype Source [ref reducer edges meta]
+  IMeta
+  (-meta [_]
+    meta)
+
   IDeref
   (-deref [this]
     (when (some? *reactive-context*)
@@ -70,17 +86,12 @@
       (.commit))
     nil)
 
-  IReactive
+  INode
+  (-order [_] 0)
   (-add-edge [_ node]
     (.add edges node))
   (-remove-edge [_ node]
-    (.delete edges node))
-
-  INode
-  (-order [_] 0)
-  ;; TODO these aren't used
-  (-set-order [_ _] 0)
-  (-calculate [_] nil))
+    (.delete edges node)))
 
 
 (defn- set-difference
@@ -98,51 +109,107 @@
 
 
 ;; `edges` are things that depend on me
-(deftype Node [ref f xf edges ^:mutable derefs ^:mutable order]
+;; TODO make this lazy, evaluated based on sink
+(deftype Node [state f xf to-edges ^:mutable from-edges ^:mutable order meta]
+  IMeta
+  (-meta [_]
+    meta)
+
   IDeref
   (-deref [this]
     (when (some? *reactive-context*)
       (.add *reactive-context* this))
-    (harmony/deref ref))
+    (harmony/deref state))
 
   INode
   (-order [_] order)
+  (-add-edge [_ node]
+    (.add to-edges node))
+  (-remove-edge [_ node]
+    (.delete to-edges node))
+
+  IReactive
   (-set-order [_ n]
     (when (> n order)
       (set! order n)))
   (-calculate [this]
-    (let [derefs' (js/Set.)]
-      ;; run `f` with `*reactive-context*` set so that we can diff our derefs
+    (let [from-edges' (js/Set.)]
+      ;; run `f` with `*reactive-context*` set so that we can diff our from-edges
       ;; and clean up any that have become stale
-      (binding [*reactive-context* derefs']
+      (binding [*reactive-context* from-edges']
         ;; TODO run `xf` for transducing
-        (harmony/set ref (f)))
+        (harmony/set state (f)))
 
       ;;
       ;; TODO this all needs to _after_ the transaction has committed.
       ;;
 
-      ;; remove ourself from derefs that are stale
-      (doseq [deref (set-difference derefs derefs')]
-        (-remove-edge deref this))
+      ;; remove ourself from from-edges that are stale
+      (doseq [node (set-difference from-edges from-edges')]
+        (-remove-edge node this))
 
       ;; TODO only do this for difference the other way maybe?
-      (doseq [deref derefs']
-        (-add-edge deref this))
+      (doseq [node from-edges']
+        (-add-edge node this)
+        ;; set the order of this node to be at least as big as it's biggest edge
+        ;; to enable topological sorting when calculating
+        (-set-order this (inc (-order node))))
 
-      ;; set current derefs
-      (set! derefs derefs')
-
-
-      ;; TODO set order
+      ;; set current from-edges
+      (set! from-edges from-edges')
 
       ;; return edges to be calculated
-      edges)))
+      to-edges)))
+
+
+(deftype Sink [state f ^:mutable from-edges ^:mutable watches ^:mutable order meta]
+  IDeref
+  (-deref [_]
+    (when *reactive-context*
+      (throw (ex-info "Cannot deref sink inside of a node" {})))
+    (harmony/deref state))
+
+  IReactive
+  (-set-order [_ n]
+    (when (> n order)
+      (set! order n)))
+  (-calculate [this]
+    (let [from-edges' (js/Set.)
+          old (harmony/deref state)]
+      (binding [*reactive-context* from-edges']
+        (harmony/set state (f)))
+
+      ;; remove ourself from edges that are stale
+      (doseq [node (set-difference from-edges from-edges')]
+        (-remove-edge node this))
+
+      ;; TODO only do this for difference the other way maybe?
+      (doseq [node from-edges']
+        (-add-edge node this)
+        ;; set the order of this node to be at least as big as it's biggest edge
+        ;; to enable topological sorting when calculating
+        (-set-order this (inc (-order node))))
+
+      ;; set current from-edges
+      (set! from-edges from-edges')
+
+      ;; run watches
+      (doseq [[key f] watches]
+        (f key this old (harmony/deref state)))
+
+      ;; sinks never have to-edges
+      nil))
+
+  IWatchable
+  (-add-watch [_ key f]
+    (set! watches (assoc watches key f)))
+  (-remove-watch [this key]
+    (set! watches (dissoc watches key))))
 
 
 (defn source
   [reducer default]
-  (->Source (harmony/ref default) reducer (js/Set.)))
+  (->Source (harmony/ref default) reducer (js/Set.) nil))
 
 
 (defn node
@@ -151,15 +218,33 @@
               (harmony/ref nil)
               f
               nil ;; `xf`
-              (js/Set.) ;; `edges`
-              (js/Set.) ;; `derefs`
-              ;; assume at least order 11
-              1)]
+              (js/Set.) ;; `from-edges`
+              (js/Set.) ;; `to-edges`
+              ;; assume at least order 1
+              1
+              ;; meta
+              nil)]
     ;; run first calculation eagerly
     (-> (harmony/branch)
         (.add #(-calculate node))
         (.commit))
     node))
+
+
+(defn sink
+  [f]
+  (let [s (->Sink
+           (harmony/ref nil)
+           f
+           (js/Set.) ;; from-edges
+           {} ;; watches
+           1 ;; default order
+           ;; meta
+           nil)]
+    (-> (harmony/branch)
+        (.add #(-calculate s))
+        (.commit))
+    s))
 
 
 (defn send [src message]
@@ -173,11 +258,31 @@
 
   (def b (node #(inc @a)))
 
-  (def c (node #(+ @a @b)))
+  (def c (node #(dec @a)))
+
+  (def d (node #(do (prn 'd)
+                    (+ @b @c))))
+
+  (def s (sink #(deref d)))
+
+  (-order a)
+
+  (-order b)
+
+  (-order c)
+
+  (-order d)
 
   (send a :dec)
 
   @a
 
   @b
+
+  @c
+
+  @d
+
+  (add-watch s :log (fn [_ _ o n] (prn o n)))
+  (remove-watch s :log)
 )
