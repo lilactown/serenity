@@ -115,9 +115,11 @@
 
 ;; signals are lazy!
 (deftype Signal [state input-fn xf
-                 ^:mutable initialized? ^:mutable
-                 to-edges ^:mutable from-edges ^:mutable
-                 order meta]
+                 ^:mutable initialized?
+                 ^:mutable to-edges
+                 ^:mutable from-edges
+                 ^:mutable order
+                 meta]
   IMeta
   (-meta [_]
     meta)
@@ -131,6 +133,7 @@
             (-calculate this)))
       (when-not initialized?
         ;; for REPLing, create branch and calculate
+        ;; TODO figure out a way not to set the value of state?
         (-> (harmony/branch)
             (.add #(-calculate this))
             (.commit))))
@@ -156,11 +159,18 @@
   IReactive
   (-calculate [this]
     (let [from-edges' (js/Set.)]
+      ;; TODO check if different before propagating
+
       ;; run `f` with `*reactive-context*` set so that we can diff our from-edges
       ;; and clean up any that have become stale
       (binding [*reactive-context* from-edges']
-        ;; TODO run `xf` for transducing
-        (harmony/set state (input-fn)))
+        (let [rf (fn [result input] input)]
+          (harmony/alter
+           state
+           (if (some? xf)
+             (xf rf)
+             rf)
+           (input-fn))))
 
       (when (some? *reactive-context*)
         ;;
@@ -171,7 +181,7 @@
         (doseq [node (set-difference from-edges from-edges')]
           (-remove-edge node this))
 
-        ;; TODO only do this for difference the other way maybe?
+        ;; expectation is that adding an edge is idempotent
         (doseq [node from-edges']
           (-add-edge node this)
           ;; set the order of this node to be at least as big as it's biggest edge
@@ -275,23 +285,26 @@
 
 (defn- stabilize!
   []
-  (-> (harmony/branch)
-      ;; TODO rewrite this to add thunk for each calculation
-      (.add #(calculate-all-nodes!
-              (.reduce message-queue
-                       (fn [edges [src message]]
-                         (into edges (-receive src message)))
-                       #{})))
-      (.commit))
-  ;; TODO defer
-  (set! message-queue #js []))
+  (try
+    (-> (harmony/branch)
+        ;; TODO rewrite this to add thunk for each calculation
+        (.add #(calculate-all-nodes!
+                (.reduce message-queue
+                         (fn [edges [src message]]
+                           (into edges (-receive src message)))
+                         #{})))
+        (.commit))
+    (catch js/Object e
+      (js/setTimeout #(throw e) 0))
+    (finally
+      (set! message-queue #js []))))
 
 
 (defn send [src message]
   (.push message-queue #js [src message])
   (when (= 1 (.-length message-queue))
     (js/queueMicrotask stabilize!))
-  nil)
+  src)
 
 
 (comment
@@ -301,10 +314,12 @@
 
   (def b (signal #(inc @a)))
 
-  (def c (signal #(dec @a)))
+  (def c (signal #(inc @a)))
 
-  (def d (signal #(do (prn 'd)
-                      (+ @b @c))))
+  (def d (signal #(deref b)
+                 (filter even?)))
+
+  (def e (signal #(+ @c @d)))
 
   (def s (sink d (fn [_ o n] (prn o n))))
 
@@ -316,8 +331,7 @@
 
   (-order d)
 
-  (do (send a :dec)
-      (send a :dec))
+  (do (send a :inc))
 
   @a
 
