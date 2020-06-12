@@ -1,4 +1,4 @@
-(ns melody.core
+(ns serenity.core
   (:require
    [lilactown.harmony :as harmony]
    [lilactown.poset :refer [poset]]))
@@ -114,7 +114,7 @@
 
 
 ;; signals are lazy!
-(deftype Signal [state f xf
+(deftype Signal [state input-fn xf
                  ^:mutable initialized? ^:mutable
                  to-edges ^:mutable from-edges ^:mutable
                  order meta]
@@ -160,7 +160,7 @@
       ;; and clean up any that have become stale
       (binding [*reactive-context* from-edges']
         ;; TODO run `xf` for transducing
-        (harmony/set state (f)))
+        (harmony/set state (input-fn)))
 
       (when (some? *reactive-context*)
         ;;
@@ -243,7 +243,7 @@
 (defn signal
   ([f] (signal f nil))
   ([f xf]
-   (let [node (->Node
+   (let [node (->Signal
                (harmony/ref nil)
                f ;; `f`
                xf ;; `xf`
@@ -275,7 +275,6 @@
 
 (defn- stabilize!
   []
-  (prn :stabilizing)
   (-> (harmony/branch)
       ;; TODO rewrite this to add thunk for each calculation
       (.add #(calculate-all-nodes!
