@@ -113,8 +113,16 @@
       (js/Set.)))
 
 
+(defn- set-union
+  [s1 s2]
+  (js/Set.
+   (concat
+    (js/Set. #js [1 2 3])
+    (js/Set. #js [2 3 4]))))
+
+
 ;; signals are lazy!
-(deftype Signal [state input-fn xf
+(deftype Signal [state input-fn rf
                  ^:mutable initialized?
                  ^:mutable to-edges
                  ^:mutable from-edges
@@ -129,7 +137,7 @@
     (if (some? *reactive-context*)
       (do (.add ^js *reactive-context* this)
           (when-not initialized?
-            ;; lazily calculate
+            ;; calculate now since we're being lazy
             (-calculate this)))
       (when-not initialized?
         ;; for REPLing, create branch and calculate
@@ -137,7 +145,10 @@
         (-> (harmony/branch)
             (.add #(-calculate this))
             (.commit))))
-    (harmony/deref state))
+    (let [v (harmony/deref state)]
+      (if (reduced? v)
+        @v
+        v)))
 
   INode
   (-add-edge [_ node]
@@ -158,43 +169,51 @@
 
   IReactive
   (-calculate [this]
-    (let [from-edges' (js/Set.)]
+    (let [from-edges' (js/Set.)
+          old (harmony/deref state)]
       ;; TODO check if different before propagating
 
       ;; run `f` with `*reactive-context*` set so that we can diff our from-edges
       ;; and clean up any that have become stale
       (binding [*reactive-context* from-edges']
-        (let [rf (fn [result input] input)]
-          (harmony/alter
-           state
-           (if (some? xf)
-             (xf rf)
-             rf)
-           (input-fn))))
+        (harmony/alter
+         state
+         rf
+         (input-fn)))
 
+      ;;
+      ;; TODO this all needs to _after_ the transaction has committed.
+      ;;
+
+      (set! initialized? true)
       (when (some? *reactive-context*)
-        ;;
-        ;; TODO this all needs to _after_ the transaction has committed.
-        ;;
+        (if (reduced? (harmony/deref state))
+          ;; if reduced, disconnect ourself from listening to any changes
+          (do
+            ;; remove ourself from all from-edges
+            (doseq [node (set-union from-edges' from-edges)]
+              (-remove-edge node this))
 
-        ;; remove ourself from from-edges that are stale
-        (doseq [node (set-difference from-edges from-edges')]
-          (-remove-edge node this))
+            ;; clear out to potentially help w/ GC
+            (set! from-edges nil))
 
-        ;; expectation is that adding an edge is idempotent
-        (doseq [node from-edges']
-          (-add-edge node this)
-          ;; set the order of this node to be at least as big as it's biggest edge
-          ;; to enable topological sorting when calculating
-          (-set-order this (inc (-order node))))
+          (do
+            ;; remove ourself from from-edges that are stale
+            (doseq [node (set-difference from-edges from-edges')]
+              (-remove-edge node this))
 
-        ;; set current from-edges
-        (set! from-edges from-edges')
+            ;; expectation is that adding an edge is idempotent
+            (doseq [node from-edges']
+              (-add-edge node this)
+              ;; set the order of this node to be at least as big as it's biggest edge
+              ;; to enable topological sorting when calculating
+              (-set-order this (inc (-order node))))
 
-        (set! initialized? true))
-
+            ;; set current from-edges
+            (set! from-edges from-edges'))))
       ;; return edges to be calculated
-      to-edges)))
+      (when-not (identical? old (harmony/deref state))
+        to-edges))))
 
 
 ;; sinks are eager!
@@ -225,16 +244,6 @@
       (binding [*reactive-context* (js/Set.)]
         (harmony/set state @node))
 
-      ;; remove ourself from edges that are stale
-      ;; (doseq [node (set-difference from-edges from-edges')]
-      ;;   (-remove-edge node this))
-
-      ;; TODO only do this for difference
-      ;; (doseq [node from-edges']
-      ;;   (-add-edge node this)
-      ;;   ;; set the order of this node to be at least as big as it's biggest edge
-      ;;   ;; to enable topological sorting when calculating
-      ;;   (-set-order this (inc (-order node))))
       (-add-edge node this)
       (-set-order this (inc (-order node)))
 
@@ -251,12 +260,17 @@
 
 
 (defn signal
-  ([f] (signal f nil))
-  ([f xf]
-   (let [node (->Signal
+  ([input-fn] (signal input-fn nil))
+  ([input-fn xf]
+   (let [rf (fn [_ input] ;; reducer function just takes the input
+              input)
+         node (->Signal
                (harmony/ref nil)
-               f ;; `f`
-               xf ;; `xf`
+               input-fn
+               ;; `rf`
+               (if (some? xf)
+                 (xf rf)
+                 rf)
                false ;; `initialized?`
                (js/Set.) ;; `from-edges`
                (js/Set.) ;; `to-edges`
@@ -312,24 +326,22 @@
                     :inc (inc %1)
                     :dec (dec %1)) 0))
 
-  (def b (signal #(inc @a)))
+  (def b (signal #(do (prn 'b) (inc @a))))
 
-  (def c (signal #(inc @a)))
+  (def c (signal #(do (prn 'c) (inc @a))))
 
-  (def d (signal #(deref b)
-                 (filter even?)))
+  (def d (signal #(do (prn 'd) @b)
+                 (take 5)))
 
-  (def e (signal #(+ @c @d)))
+  (def e (signal #(do (prn 'e) (+ @c @d))))
 
-  (def s (sink d (fn [_ o n] (prn o n))))
+  (def s (sink e (fn [_ o n] (prn o n))))
 
   (-order a)
 
   (-order b)
 
   (-order c)
-
-  (-order d)
 
   (do (send a :inc))
 
@@ -340,6 +352,8 @@
   @c
 
   @d
+
+  @e
 
   (-dispose s)
 )
