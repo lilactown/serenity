@@ -291,13 +291,6 @@
 
 
 (defn send [src message]
-  #_(let [edges (harmony/ref nil)]
-    (doto (harmony/branch)
-      ;; calculate new state of source
-      (.add #(harmony/set edges (-receive src message)))
-      ;; calculate nodes
-      (.add #(stabilize! (harmony/deref edges)))
-      (.commit)))
   (.push message-queue #js [src message])
   (when (= 1 (.-length message-queue))
     (js/queueMicrotask stabilize!))
