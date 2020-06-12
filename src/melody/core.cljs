@@ -14,7 +14,7 @@
 
 
 (defprotocol ISource
-  (-send [src x]))
+  (-receive [src x]))
 
 
 (defprotocol IReactive
@@ -38,6 +38,8 @@
 
 (def ^:dynamic *transaction*)
 
+
+(def message-queue #js [])
 
 ;;
 ;; The general approach we use for optimally calculating nodes is a topological
@@ -79,17 +81,12 @@
     (harmony/deref ref))
 
   ISource
-  (-send [_ x]
-    (doto (harmony/branch)
-      ;; calculate new state of source
-      (.add #(harmony/alter
-              ref
-              (fn [current]
-                (reducer current x))))
-      ;; calculate nodes
-      (.add #(calculate-all-nodes! edges))
-      (.commit))
-    nil)
+  (-receive [_ x]
+    (harmony/alter
+     ref
+     (fn [current]
+       (reducer current x)))
+    edges)
 
   IOrdered
   (-order [_] 0)
@@ -133,7 +130,7 @@
             ;; lazily calculate
             (-calculate this)))
       (when-not initialized?
-        ;; lazily calculate
+        ;; for REPLing, create branch and calculate
         (-> (harmony/branch)
             (.add #(-calculate this))
             (.commit))))
@@ -278,8 +275,33 @@
     s))
 
 
+(defn- stabilize!
+  []
+  (prn :stabilizing)
+  (-> (harmony/branch)
+      ;; TODO rewrite this to add thunk for each calculation
+      (.add #(calculate-all-nodes!
+              (.reduce message-queue
+                       (fn [edges [src message]]
+                         (into edges (-receive src message)))
+                       #{})))
+      (.commit))
+  ;; TODO defer
+  (set! message-queue #js []))
+
+
 (defn send [src message]
-  (-send src message))
+  #_(let [edges (harmony/ref nil)]
+    (doto (harmony/branch)
+      ;; calculate new state of source
+      (.add #(harmony/set edges (-receive src message)))
+      ;; calculate nodes
+      (.add #(stabilize! (harmony/deref edges)))
+      (.commit)))
+  (.push message-queue #js [src message])
+  (when (= 1 (.-length message-queue))
+    (js/queueMicrotask stabilize!))
+  nil)
 
 
 (comment
