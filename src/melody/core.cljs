@@ -188,7 +188,7 @@
 
 
 ;; sinks are eager!
-(deftype Sink [state f ^:mutable from-edges ^:mutable watch ^:mutable order meta]
+(deftype Sink [state ^:mutable node ^:mutable watch ^:mutable order meta]
   IDeref
   (-deref [_]
     (when *reactive-context*
@@ -198,9 +198,8 @@
   ISink
   (-dispose [this]
     ;; try to allow this sink and any of it's dependencies to be GCd
-    (doseq [node from-edges]
-      (-remove-edge node this))
-    (set! from-edges nil)
+    (-remove-edge node this)
+    (set! node nil)
     (set! watch nil))
 
   IOrdered
@@ -211,24 +210,23 @@
 
   IReactive
   (-calculate [this]
-    (let [from-edges' (js/Set.)
-          old (harmony/deref state)]
-      (binding [*reactive-context* from-edges']
-        (harmony/set state (f)))
+    (let [old (harmony/deref state)]
+      ;; do this only because otherwise we'll start a new branch
+      (binding [*reactive-context* (js/Set.)]
+        (harmony/set state @node))
 
       ;; remove ourself from edges that are stale
-      (doseq [node (set-difference from-edges from-edges')]
-        (-remove-edge node this))
+      ;; (doseq [node (set-difference from-edges from-edges')]
+      ;;   (-remove-edge node this))
 
       ;; TODO only do this for difference
-      (doseq [node from-edges']
-        (-add-edge node this)
-        ;; set the order of this node to be at least as big as it's biggest edge
-        ;; to enable topological sorting when calculating
-        (-set-order this (inc (-order node))))
-
-      ;; set current from-edges
-      (set! from-edges from-edges')
+      ;; (doseq [node from-edges']
+      ;;   (-add-edge node this)
+      ;;   ;; set the order of this node to be at least as big as it's biggest edge
+      ;;   ;; to enable topological sorting when calculating
+      ;;   (-set-order this (inc (-order node))))
+      (-add-edge node this)
+      (-set-order this (inc (-order node)))
 
       ;; TODO run watch after commit
       (watch this old (harmony/deref state))
@@ -243,27 +241,27 @@
 
 
 (defn signal
-  [f]
-  (let [node (->Node
-              (harmony/ref nil)
-              f
-              nil ;; `xf`
-              false ;; `initialized?`
-              (js/Set.) ;; `from-edges`
-              (js/Set.) ;; `to-edges`
-              ;; assume at least order 1
-              1
-              ;; meta
-              nil)]
-    node))
+  ([f] (signal f nil))
+  ([f xf]
+   (let [node (->Node
+               (harmony/ref nil)
+               f ;; `f`
+               xf ;; `xf`
+               false ;; `initialized?`
+               (js/Set.) ;; `from-edges`
+               (js/Set.) ;; `to-edges`
+               ;; assume at least order 1
+               1
+               ;; meta
+               nil)]
+     node)))
 
 
 (defn sink
-  [input-fn on-change]
+  [input on-change]
   (let [s (->Sink
            (harmony/ref nil)
-           input-fn
-           (js/Set.) ;; from-edges
+           input
            on-change
            1 ;; default order
            ;; meta
@@ -309,7 +307,7 @@
   (def d (signal #(do (prn 'd)
                       (+ @b @c))))
 
-  (def s (sink #(deref d) (fn [_ o n] (prn o n))))
+  (def s (sink d (fn [_ o n] (prn o n))))
 
   (-order a)
 
