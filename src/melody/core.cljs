@@ -326,7 +326,8 @@
 
   (-order d)
 
-  (send a :dec)
+  (do (send a :dec)
+      (send a :dec))
 
   @a
 
