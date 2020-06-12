@@ -113,11 +113,11 @@
       (js/Set.)))
 
 
-;; nodes are lazy!
-(deftype Node [state f xf
-               ^:mutable initialized? ^:mutable
-               to-edges ^:mutable from-edges ^:mutable
-               order meta]
+;; signals are lazy!
+(deftype Signal [state f xf
+                 ^:mutable initialized? ^:mutable
+                 to-edges ^:mutable from-edges ^:mutable
+                 order meta]
   IMeta
   (-meta [_]
     meta)
@@ -242,7 +242,7 @@
   (->Source (harmony/ref default) reducer (js/Set.) nil))
 
 
-(defn node
+(defn signal
   [f]
   (let [node (->Node
               (harmony/ref nil)
@@ -309,12 +309,12 @@
                     :inc (inc %1)
                     :dec (dec %1)) 0))
 
-  (def b (node #(inc @a)))
+  (def b (signal #(inc @a)))
 
-  (def c (node #(dec @a)))
+  (def c (signal #(dec @a)))
 
-  (def d (node #(do (prn 'd)
-                    (+ @b @c))))
+  (def d (signal #(do (prn 'd)
+                      (+ @b @c))))
 
   (def s (sink #(deref d) (fn [_ o n] (prn o n))))
 
