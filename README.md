@@ -59,7 +59,7 @@ It's focus is on performance, ergonomics, fault tolerance and reliability.
 - [x] Tolerant to errors - never get into an inconsistent state
 - [x] Batches changes
 - [x] Transducers
-- [ ] Collect values over time
+- [ ] Higher order operators
 - [ ] Async time slicing
 - [ ] Concurrent prioritization
 
