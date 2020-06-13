@@ -208,7 +208,7 @@
           ;; set current from-edges
           (set! from-edges from-edges')))
       ;; return edges to be calculated
-      (when-not (identical? old (harmony/deref state))
+      (when-not (= old (harmony/deref state))
         to-edges))))
 
 

@@ -81,7 +81,7 @@
          values (atom [])]
 
      (s/sink! c (fn [_ _ n]
-                 (swap! values conj n)))
+                  (swap! values conj n)))
 
      (queue-send src 1)
      (queue-send src 2)
@@ -96,7 +96,7 @@
 
 (t/deftest simple-sync-disposal
   (t/testing
-    "That a sink which is disposed in the same tick as messages are sent will not run"
+      "That a sink which is disposed in the same tick as messages are sent will not run"
     (t/async
      done
      (let [src (s/source (fn [_ x] x)
@@ -128,7 +128,7 @@
                        :initial 0)
          values (atom [])
          [sink!-calls sink!-f] (spy (fn [_ _ n]
-                                    (swap! values conj n)))
+                                      (swap! values conj n)))
          sink! (s/sink! src sink!-f)]
 
      (queue-send src 1)
@@ -151,29 +151,47 @@
 
 (t/deftest batching
   (t/async
-    done
-    (let [src (s/source (fn [_ x] x)
-                        :initial 0)
-          values (atom [])
-          [sink!-calls sink!-f] (spy (fn [_ _ n]
-                                     (swap! values conj n)))]
-      (s/sink! src sink!-f)
-      ;; send all in one batch
-      (queue (fn []
-               (s/send src 1)
-               (s/send src 2)
-               (s/send src 3)
-               (s/send src 4)))
-      (-> (js/Promise.all
-           #js [(awaitp #(= [0 4] @values))
-                (awaitp #(= 2 @sink!-calls))])
-          (.then #(t/is (= [0 4] @values)))
-          ;; `2` because it ran once on initial state
-          (.then #(t/is (= 2 @sink!-calls)))
-          (.then done)))))
+   done
+   (let [src (s/source (fn [_ x] x)
+                       :initial 0)
+         values (atom [])
+         [sink!-calls sink!-f] (spy (fn [_ _ n]
+                                      (swap! values conj n)))]
+     (s/sink! src sink!-f)
+     ;; send all in one batch
+     (queue (fn []
+              (s/send src 1)
+              (s/send src 2)
+              (s/send src 3)
+              (s/send src 4)))
+     (-> (js/Promise.all
+          #js [(awaitp #(= [0 4] @values))
+               (awaitp #(= 2 @sink!-calls))])
+         (.then #(t/is (= [0 4] @values)))
+         ;; `2` because it ran once on initial state
+         (.then #(t/is (= 2 @sink!-calls)))
+         (.then done)))))
 
 
-(t/deftest memoizing-outputs)
+(t/deftest memoizing-outputs
+  (t/async
+   done
+   (let [[src-calls src-f] (spy (fn [_ _]
+                                  {:asdf "jkl"}))
+         src (s/source src-f :initial {:asdf "jkl"})
+         a (s/signal #(deref src))
+         b (s/signal #(+ @a))
+         [sink!-calls sink!-f] (spy #())]
+     (s/sink! b sink!-f)
+
+     (queue-send src nil)
+     (queue-send src nil)
+     (queue-send src nil)
+
+     (-> (awaitp #(= 4 @src-calls))
+         (.then #(t/is (= 3 @src-calls)))
+         (.then #(t/is (= 1 @sink!-calls)))
+         (.then done)))))
 
 
 (t/deftest nasty-diamond
@@ -223,7 +241,7 @@
   (t/async
    done
    (let [src (s/source (fn [_ x] x)
-                        :initial 0)
+                       :initial 0)
 
          history (s/collect (fn [log x]
                               (conj log x))
