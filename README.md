@@ -17,8 +17,8 @@ It's focus is on performance, ergonomics, fault tolerance and reliability.
    [serenity.core :as s]))
 
 ;; create a source, which is a mutable container that we can send messages to
-(def state (s/source
-            (fn [state message]
+(def state 
+  (s/source (fn [state message]
               (case message
                 :inc (update state :count inc)
                 :dec (update state :count inc)))
