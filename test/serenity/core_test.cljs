@@ -73,7 +73,7 @@
                        0)
          a (s/signal #(inc @src))
 
-         b (s/signal #(dec @src))
+         b (s/signal #(inc @src))
 
          c (s/signal #(+ @a @b))
 
@@ -87,13 +87,13 @@
      (queue-send src 3)
      (queue-send src 4)
 
-     (-> (awaitp #(= @values [0 2 4 6 8]))
-         (.then #(t/is (= @values [0 2 4 6 8])
+     (-> (awaitp #(= @values [2 4 6 8 10]))
+         (.then #(t/is (= @values [2 4 6 8 10])
                        "Expected values are equal"))
          (.then done)))))
 
 
-(t/deftest disposing
+(t/deftest simple-disposal
   (t/async
    done
    (let [src (s/source (fn [_ x] x) 0)
@@ -113,9 +113,12 @@
           #js [(awaitp #(= [0 1 2] @values))
                (awaitp #(= 3 @sink!-calls))])
          (.then #(t/is (= [0 1 2] @values)))
-         ;; `2` because it ran once on initial state
+         ;; `3` because it ran once on initial state
          (.then #(t/is (= 3 @sink!-calls)))
          (.then done)))))
+
+
+(t/deftest complex-graph-disposal)
 
 
 (t/deftest batching
