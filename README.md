@@ -4,11 +4,10 @@
 
 Serenity is a library for doing reactive programming. It allows you to build up
 a graph of calculations, similar in concept to a spreadsheet, that automatically
-re-calculates on changes to inputs.
+re-compute on changes to inputs.
 
-It is intended for use with UI frameworks such as React when you need to store
-state outside of the framework, and is built with performance, ergonomics and
-fault-tolerance in mind.
+It's primary use case is to provide UIs the ability to incrementally compute updates.
+It's focus is on performance, ergonomics, fault tolerance and reliability.
 
 ## Example
 
@@ -52,7 +51,21 @@ fault-tolerance in mind.
 
 ## Installation
 
+## Features
+
+- [x] Incrementally compute new values based on updates
+- [x] Only computes what's listend to
+- [x] Tolerant to errors - never get into an inconsistent state
+- [x] Batches changes
+- [x] Transducers
+- [ ] Collect values over time
+- [ ] Async time slicing
+- [ ] Concurrent prioritization
+
 ## API docs
 
 ## License
 
+Copyright 2020 Will Acton
+
+Distributed under the EPL 2.0
