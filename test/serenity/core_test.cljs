@@ -79,7 +79,7 @@
 
          values (atom [])]
 
-     (s/sink c (fn [_ _ n]
+     (s/sink! c (fn [_ _ n]
                  (swap! values conj n)))
 
      (queue-send src 1)
@@ -93,7 +93,29 @@
          (.then done)))))
 
 
-(t/deftest disposing)
+(t/deftest disposing
+  (t/async
+   done
+   (let [src (s/source (fn [_ x] x) 0)
+         values (atom [])
+         [sink!-calls sink!-f] (spy (fn [_ _ n]
+                                    (swap! values conj n)))
+         sink! (s/sink! src sink!-f)]
+
+     (queue-send src 1)
+     (queue-send src 2)
+     (queue #(s/dispose! sink!))
+     (queue-send src 3)
+     (queue-send src 4)
+
+
+     (-> (js/Promise.all
+          #js [(awaitp #(= [0 1 2] @values))
+               (awaitp #(= 3 @sink!-calls))])
+         (.then #(t/is (= [0 1 2] @values)))
+         ;; `2` because it ran once on initial state
+         (.then #(t/is (= 3 @sink!-calls)))
+         (.then done)))))
 
 
 (t/deftest batching
@@ -101,9 +123,9 @@
     done
     (let [src (s/source (fn [_ x] x) 0)
           values (atom [])
-          [sink-calls sink-f] (spy (fn [_ _ n]
+          [sink!-calls sink!-f] (spy (fn [_ _ n]
                                      (swap! values conj n)))]
-      (s/sink src sink-f)
+      (s/sink! src sink!-f)
       ;; send all in one batch
       (queue (fn []
                (s/send src 1)
@@ -112,11 +134,14 @@
                (s/send src 4)))
       (-> (js/Promise.all
            #js [(awaitp #(= [0 4] @values))
-                (awaitp #(= 2 @sink-calls))])
+                (awaitp #(= 2 @sink!-calls))])
           (.then #(t/is (= [0 4] @values)))
           ;; `2` because it ran once on initial state
-          (.then #(t/is (= 2 @sink-calls)))
+          (.then #(t/is (= 2 @sink!-calls)))
           (.then done)))))
+
+
+(t/deftest memoizing-outputs)
 
 
 (t/deftest nasty-diamond
@@ -140,7 +165,7 @@
            c (s/signal c-f)]
 
        ;; make it happen
-       (s/sink c (fn [_ _ _]))
+       (s/sink! c (fn [_ _ _]))
 
        (t/is (= [1 1 1 1]
                 [@a0-calls @a-calls @b-calls @c-calls]))
@@ -151,5 +176,18 @@
                   [@a0-calls @a-calls @b-calls @c-calls])
               "Expected calls match"
               done)))))
+
+
+(t/deftest simple-transducer)
+
+
+(t/deftest filter-transducer)
+
+
+(t/deftest stateful-transducer)
+
+
+(t/deftest on-connect)
+
 
 #_(t/run-tests)

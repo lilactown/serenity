@@ -171,8 +171,6 @@
   (-calculate [this]
     (let [from-edges' (js/Set.)
           old (harmony/deref state)]
-      ;; TODO check if different before propagating
-
       ;; run `f` with `*reactive-context*` set so that we can diff our from-edges
       ;; and clean up any that have become stale
       (binding [*reactive-context* from-edges']
@@ -280,7 +278,7 @@
      node)))
 
 
-(defn sink
+(defn sink!
   [input on-change]
   (let [s (->Sink
            (harmony/ref nil)
@@ -294,6 +292,11 @@
         (.add #(-calculate s))
         (.commit))
     s))
+
+
+(defn dispose!
+  [sink]
+  (-dispose sink))
 
 
 (defn- stabilize!
