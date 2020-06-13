@@ -302,14 +302,16 @@
    (let [[xf inputs] (if (fn? (first args))
                        #js [(first args) (rest args)]
                        #js [nil args])
-         rf (fn [current inputs]
-              (apply f current inputs))]
+         rf (if (some? xf)
+              (let [f' (xf f)]
+                (fn [current inputs]
+                  (apply f' current inputs)))
+              (fn [current inputs]
+                (apply f current inputs)))]
      (->Signal
       (harmony/ref nil)
       #(mapv deref inputs) ;; `input-fn`
-      (if (some? xf)
-        (xf rf)
-        rf)
+      rf
       false
       (js/Set.)
       (js/Set.)
