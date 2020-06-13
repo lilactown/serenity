@@ -252,8 +252,8 @@
 
 
 (defn source
-  [reducer default]
-  (->Source (harmony/ref default) reducer (js/Set.) nil))
+  [reducer & {:keys [initial]}]
+  (->Source (harmony/ref initial) reducer (js/Set.) nil))
 
 
 (defn signal

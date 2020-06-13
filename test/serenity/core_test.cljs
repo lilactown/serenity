@@ -70,7 +70,7 @@
   (t/async
    done
    (let [src (s/source (fn [_ x] x)
-                       0)
+                       :initial 0)
          a (s/signal #(inc @src))
 
          b (s/signal #(inc @src))
@@ -96,7 +96,8 @@
 (t/deftest simple-disposal
   (t/async
    done
-   (let [src (s/source (fn [_ x] x) 0)
+   (let [src (s/source (fn [_ x] x)
+                       :initial 0)
          values (atom [])
          [sink!-calls sink!-f] (spy (fn [_ _ n]
                                     (swap! values conj n)))
@@ -124,7 +125,8 @@
 (t/deftest batching
   (t/async
     done
-    (let [src (s/source (fn [_ x] x) 0)
+    (let [src (s/source (fn [_ x] x)
+                        :initial 0)
           values (atom [])
           [sink!-calls sink!-f] (spy (fn [_ _ n]
                                      (swap! values conj n)))]
@@ -152,7 +154,7 @@
     (t/async
      done
      (let [src (s/source (fn [_ x] x)
-                         0)
+                         :initial 0)
 
            [a0-calls a0-f] (spy #(inc @src))
            a0 (s/signal a0-f)
