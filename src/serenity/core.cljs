@@ -251,33 +251,80 @@
 
 
 (defn source
+  "Creates a new source node. Takes a 2-arity reducer function of current state,
+  and a message, which returns the next state.
+
+  `deref` / `@` returns the current state. When dereferenced inside of a signal,
+  will trigger a re-calculation of that signal on change.
+
+  `send` can be used to send messages to the source in order to trigger a
+  change.
+
+  `:initial` is an optional keyword arg for the initial state. Default `nil`."
   [reducer & {:keys [initial]}]
   (->Source (harmony/ref initial) reducer (js/Set.) nil))
 
 
 (defn signal
+  "Creates a new signal node. Takes a function which dereferences one or more
+  other signals or sources and returns a value.
+
+  `deref` / `@` returns the current state. When dereferenced inside of a signal,
+  will trigger a re-calculation of that signal on change.
+
+  By default, signals do not compute their values unless they are connected to
+  a signal which is listened to by a sink.
+
+  Optionally, a transducer `xf` may be passed in to transform the result of the
+  `input-fn`."
   ([input-fn] (signal input-fn nil))
   ([input-fn xf]
    (let [rf (fn [_ input] ;; reducer function just takes the input
-              input)
-         node (->Signal
-               (harmony/ref nil)
-               input-fn
-               ;; `rf`
-               (if (some? xf)
-                 (xf rf)
-                 rf)
-               false ;; `initialized?`
-               (js/Set.) ;; `from-edges`
-               (js/Set.) ;; `to-edges`
-               ;; assume at least order 1
-               1
-               ;; meta
-               nil)]
-     node)))
+              input)]
+     (->Signal
+      (harmony/ref nil)
+      input-fn
+      ;; `rf`
+      (if (some? xf)
+        (xf rf)
+        rf)
+      false ;; `initialized?`
+      (js/Set.) ;; `from-edges`
+      (js/Set.) ;; `to-edges`
+      ;; assume at least order 1
+      1
+      ;; meta
+      nil))))
+
+
+(defn collect
+  ([f & args]
+   (let [[xf inputs] (if (fn? (first args))
+                       #js [(first args) (rest args)]
+                       #js [nil args])
+         rf (fn [current inputs]
+              (apply f current inputs))]
+     (->Signal
+      (harmony/ref nil)
+      #(mapv deref inputs) ;; `input-fn`
+      (if (some? xf)
+        (xf rf)
+        rf)
+      false
+      (js/Set.)
+      (js/Set.)
+      1
+      nil))))
 
 
 (defn sink!
+  "Creates a new sink node. Sinks listen to signals or sources and run
+  `on-change` when a new value is available.
+
+  Sinks will immediately calculate all nodes in the transitive graph and
+  immediately run `on-change` when first created.
+
+  To stop listening, use `dispose!` on the sink."
   [input on-change]
   (let [s (->Sink
            (harmony/ref nil)
@@ -294,6 +341,12 @@
 
 
 (defn dispose!
+  "Disposes a sink. Stops listening to changes and disconnects it from the
+  graph.
+
+  If a signal no longer has any sinks listening to it in its transitive
+  dependents, it will also disconnect from the graph and not recalculate on
+  changes to its dependencies."
   [sink]
   (-dispose sink))
 
@@ -315,7 +368,9 @@
       (set! message-queue #js []))))
 
 
-(defn send [src message]
+(defn send
+  "Sends a new message to the source asynchronously. Returns the source."
+  [src message]
   (.push message-queue #js [src message])
   (when (= 1 (.-length message-queue))
     (js/queueMicrotask stabilize!))
