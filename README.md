@@ -1,8 +1,7 @@
 # serenity
 
-> "Can't stop the signal, Mal. Everything goes somewhere, and I go everywhere."
-
-> - Mr. U., _Serenity_
+> "Can't stop the signal, Mal. Everything goes somewhere, and I go everywhere." 
+> - _Serenity_
 
 Serenity is a library for doing reactive programming. It allows you to build up
 a graph of calculations, similar in concept to a spreadsheet, that automatically
