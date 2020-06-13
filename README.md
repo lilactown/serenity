@@ -14,7 +14,7 @@ It's focus is on performance, ergonomics, fault tolerance and reliability.
 ```clojure
 (ns my-app.feature
   (:require
-   [serentiy.core :as s]))
+   [serenity.core :as s]))
 
 ;; create a source, which is a mutable container that we can send messages to
 (def state (s/source
