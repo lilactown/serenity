@@ -43,8 +43,9 @@ fault-tolerance in mind.
 
 ;; messages and sink listeners are batched; running this multiple times will
 ;; only fire our `count-logger` once
-(s/send state :inc)
-(s/send state :inc)
+(-> state
+  (s/send :inc)
+  (s/send :inc))
 
 ;; before next tick, prints: 3
 ```
