@@ -93,7 +93,34 @@
          (.then done)))))
 
 
-(t/deftest simple-disposal
+(t/deftest simple-sync-disposal
+  (t/testing
+    "That a sink which is disposed in the same tick as messages are sent will not run"
+    (t/async
+     done
+     (let [src (s/source (fn [_ x] x)
+                         :initial 0)
+           values (atom [])
+           [sink!-calls sink!-f] (spy (fn [_ _ n]
+                                        (swap! values conj n)))
+           sink! (s/sink! src sink!-f)]
+
+       (s/send src 1)
+       (s/send src 2)
+       (s/dispose! sink!)
+       (s/send src 3)
+       (s/send src 4)
+
+       (-> (js/Promise.all
+            #js [(awaitp #(= [0] @values))
+                 (awaitp #(= 1 @sink!-calls))])
+           (.then #(t/is (= [0] @values)))
+           ;; `1` because it ran once on initial state
+           (.then #(t/is (= 1 @sink!-calls)))
+           (.then done))))))
+
+
+(t/deftest simple-async-disposal
   (t/async
    done
    (let [src (s/source (fn [_ x] x)
@@ -108,7 +135,6 @@
      (queue #(s/dispose! sink!))
      (queue-send src 3)
      (queue-send src 4)
-
 
      (-> (js/Promise.all
           #js [(awaitp #(= [0 1 2] @values))
