@@ -26,6 +26,7 @@ It's focus is on performance, ergonomics, fault tolerance and reliability.
 
 
 ;; create a signal, which is a calculation based on any number of sources
+;; or other signals
 (def count (s/signal #(:count @state)))
 
 
