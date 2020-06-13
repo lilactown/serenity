@@ -186,31 +186,30 @@
       ;;
 
       (set! initialized? true)
-      (when (some? *reactive-context*)
-        (if (reduced? (harmony/deref state))
-          ;; if reduced, disconnect ourself from listening to any changes
-          (do
-            ;; remove ourself from all from-edges
-            (doseq [node (set-union from-edges' from-edges)]
-              (-remove-edge node this))
+      (if (reduced? (harmony/deref state))
+        ;; if reduced, disconnect ourself from listening to any changes
+        (do
+          ;; remove ourself from all from-edges
+          (doseq [node (set-union from-edges' from-edges)]
+            (-remove-edge node this))
 
-            ;; clear out to potentially help w/ GC
-            (set! from-edges nil))
+          ;; clear out to potentially help w/ GC
+          (set! from-edges nil))
 
-          (do
-            ;; remove ourself from from-edges that are stale
-            (doseq [node (set-difference from-edges from-edges')]
-              (-remove-edge node this))
+        (do
+          ;; remove ourself from from-edges that are stale
+          (doseq [node (set-difference from-edges from-edges')]
+            (-remove-edge node this))
 
-            ;; expectation is that adding an edge is idempotent
-            (doseq [node from-edges']
-              (-add-edge node this)
-              ;; set the order of this node to be at least as big as it's biggest edge
-              ;; to enable topological sorting when calculating
-              (-set-order this (inc (-order node))))
+          ;; expectation is that adding an edge is idempotent
+          (doseq [node from-edges']
+            (-add-edge node this)
+            ;; set the order of this node to be at least as big as it's biggest edge
+            ;; to enable topological sorting when calculating
+            (-set-order this (inc (-order node))))
 
-            ;; set current from-edges
-            (set! from-edges from-edges'))))
+          ;; set current from-edges
+          (set! from-edges from-edges')))
       ;; return edges to be calculated
       (when-not (identical? old (harmony/deref state))
         to-edges))))
