@@ -20,9 +20,11 @@
 (defprotocol IReactive
   (-calculate [node]))
 
+
 (defprotocol IOrdered
   (-set-order [node n])
   (-order [node]))
+
 
 (defprotocol INode
   (-add-edge [a b])
@@ -45,13 +47,10 @@
 ;; The general approach we use for optimally calculating nodes is a topological
 ;; sort, where each node's height is: max(height of nodes I depend on) + 1
 ;;
-;; This is implemented across the code piece; first here, where we sort by the
+;; This is implemented across the code; first here, where we sort by the
 ;; `-order` method return value, and `-set-order`, which ensures that `-order`
 ;; is always monotonically increasing for a given node, and `-calculate` which
 ;; handles calling `-set-order` after each calculation.
-;;
-
-
 (defn- calculate-all-nodes!
   [initial-nodes]
   (loop [nodes (apply poset -order initial-nodes)
@@ -157,7 +156,7 @@
     (.delete ^js to-edges node)
     (when (zero? (.-size ^js to-edges))
       (set! initialized? false)
-      ;; disposing. remove it from the graph
+      ;; not listened to by anyone, remove it from the graph
       (doseq [node from-edges]
         (-remove-edge node this))))
 
@@ -337,7 +336,7 @@
 
   (def e (signal #(do (prn 'e) (+ @c @d))))
 
-  (def s (sink e (fn [_ o n] (prn o n))))
+  (def s (sink! e (fn [_ o n] (prn o n))))
 
   (-order a)
 
