@@ -123,8 +123,8 @@
 ;; signals are lazy!
 (deftype Signal [state input-fn rf
                  ^:mutable initialized?
-                 ^:mutable to-edges
-                 ^:mutable from-edges
+                 ^:mutable edges-to-me
+                 ^:mutable edges-from-me-to-other
                  ^:mutable order
                  meta]
   IMeta
@@ -151,13 +151,13 @@
 
   INode
   (-add-edge [_ node]
-    (.add ^js to-edges node))
+    (.add ^js edges-to-me node))
   (-remove-edge [this node]
-    (.delete ^js to-edges node)
-    (when (zero? (.-size ^js to-edges))
+    (.delete ^js edges-to-me node)
+    (when (zero? (.-size ^js edges-to-me))
       (set! initialized? false)
       ;; not listened to by anyone, remove it from the graph
-      (doseq [node from-edges]
+      (doseq [node edges-from-me-to-other]
         (-remove-edge node this))))
 
   IOrdered
@@ -168,11 +168,11 @@
 
   IReactive
   (-calculate [this]
-    (let [from-edges' (js/Set.)
+    (let [edges-from-me-to-other' (js/Set.)
           old (harmony/deref state)]
-      ;; run `f` with `*reactive-context*` set so that we can diff our from-edges
+      ;; run `f` with `*reactive-context*` set so that we can diff our edges-from-me-to-other
       ;; and clean up any that have become stale
-      (binding [*reactive-context* from-edges']
+      (binding [*reactive-context* edges-from-me-to-other']
         (harmony/alter
          state
          rf
@@ -186,30 +186,30 @@
       (if (reduced? (harmony/deref state))
         ;; if reduced, disconnect ourself from listening to any changes
         (do
-          ;; remove ourself from all from-edges
-          (doseq [node (set-union from-edges' from-edges)]
+          ;; remove ourself from all edges-from-me-to-other
+          (doseq [node (set-union edges-from-me-to-other' edges-from-me-to-other)]
             (-remove-edge node this))
 
           ;; clear out to potentially help w/ GC
-          (set! from-edges nil))
+          (set! edges-from-me-to-other nil))
 
         (do
-          ;; remove ourself from from-edges that are stale
-          (doseq [node (set-difference from-edges from-edges')]
+          ;; remove ourself from edges-from-me-to-other that are stale
+          (doseq [node (set-difference edges-from-me-to-other edges-from-me-to-other')]
             (-remove-edge node this))
 
           ;; expectation is that adding an edge is idempotent
-          (doseq [node from-edges']
+          (doseq [node edges-from-me-to-other']
             (-add-edge node this)
             ;; set the order of this node to be at least as big as it's biggest edge
             ;; to enable topological sorting when calculating
             (-set-order this (inc (-order node))))
 
-          ;; set current from-edges
-          (set! from-edges from-edges')))
+          ;; set current edges-from-me-to-other
+          (set! edges-from-me-to-other edges-from-me-to-other')))
       ;; return edges to be calculated
       (when-not (= old (harmony/deref state))
-        to-edges))))
+        edges-to-me))))
 
 
 ;; sinks are eager!
@@ -246,7 +246,7 @@
       ;; TODO run watch after commit
       (watch this old (harmony/deref state))
 
-      ;; sinks never have to-edges
+      ;; sinks never have edges-to-me
       nil)))
 
 
@@ -288,8 +288,8 @@
       (xf rf)
       rf)
     false ;; `initialized?`
-    (js/Set.) ;; `from-edges`
-    (js/Set.) ;; `to-edges`
+    (js/Set.) ;; `edges-from-me-to-other`
+    (js/Set.) ;; `edges-to-me`
     ;; assume at least order 1
     1
     ;; meta
