@@ -277,24 +277,23 @@
 
   Optionally, a transducer `xf` may be passed in to transform the result of the
   `input-fn`."
-  ([input-fn] (signal input-fn nil))
-  ([input-fn xf]
-   (let [rf (fn [_ input] ;; reducer function just takes the input
-              input)]
-     (->Signal
-      (harmony/ref nil)
-      input-fn
-      ;; `rf`
-      (if (some? xf)
-        (xf rf)
-        rf)
-      false ;; `initialized?`
-      (js/Set.) ;; `from-edges`
-      (js/Set.) ;; `to-edges`
-      ;; assume at least order 1
-      1
-      ;; meta
-      nil))))
+  ([input-fn] (signal (fn [_ input] input) nil input-fn))
+  ([rf input-fn] (signal rf nil input-fn))
+  ([rf xf input-fn]
+   (->Signal
+    (harmony/ref nil)
+    input-fn
+    ;; `rf`
+    (if (some? xf)
+      (xf rf)
+      rf)
+    false ;; `initialized?`
+    (js/Set.) ;; `from-edges`
+    (js/Set.) ;; `to-edges`
+    ;; assume at least order 1
+    1
+    ;; meta
+    nil)))
 
 
 (defn sink!
