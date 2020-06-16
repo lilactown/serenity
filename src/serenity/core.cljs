@@ -18,7 +18,8 @@
 
 
 (defprotocol IReactive
-  (-calculate [node]))
+  (-calculate [node])
+  (-connect [node]))
 
 
 (defprotocol IOrdered
@@ -209,7 +210,9 @@
           (set! edges-from-me-to-other edges-from-me-to-other')))
       ;; return edges to be calculated
       (when-not (= old (harmony/deref state))
-        edges-to-me))))
+        edges-to-me)))
+  (-connect [this]
+    ))
 
 
 ;; sinks are eager!
@@ -247,7 +250,8 @@
       (watch this old (harmony/deref state))
 
       ;; sinks never have edges-to-me
-      nil)))
+      nil))
+  (-connect [this]))
 
 
 (defn source
@@ -296,14 +300,14 @@
     nil)))
 
 
-(defn sink!
+(defn sink
   "Creates a new sink node. Sinks listen to signals or sources and run
   `on-change` when a new value is available.
 
-  Sinks will immediately calculate all nodes in the transitive graph and
-  immediately run `on-change` when first created.
+  Sinks will immediately connect and calculate all nodes in the transitive
+  graph.
 
-  To stop listening, use `dispose!` on the sink."
+  To destroy and disconnect listening, use `dispose!` on the sink."
   [input on-change]
   (let [s (->Sink
            (harmony/ref nil)
