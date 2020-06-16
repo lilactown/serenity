@@ -121,6 +121,34 @@
          (.then done)))))
 
 
+(t/deftest connected?
+  (t/async
+   done
+   (let [src (s/source (fn [_ x] x)
+                       :initial 0)
+         a0 (s/signal #(deref src))
+         a1 (s/signal #(deref a0))
+         b (s/signal #(deref src))]
+     (t/is (false? (s/connected? a0)))
+     (t/is (false? (s/connected? a1)))
+     (t/is (false? (s/connected? b)))
+
+     ;; connections are schedule for the end of this tick
+     (let [sinkA (s/sink a1)]
+       (t/is (false? (s/connected? b)))
+       (t/is (false? (s/connected? a0)))
+       (t/is (false? (s/connected? a1)))
+       ;; i'm not so sure about this...
+       (t/is (true? (s/connected? sinkA)))
+
+       (-> (awaitp #(s/connected? sinkA))
+           (.then #(t/is (false? (s/connected? b) "b still unconnected")))
+           (.then #(t/is (true? (s/connected? a1))))
+           (.then #(t/is (true? (s/connected? a0))))
+           (.then #(t/is (true? (s/connected? sinkA))))
+           (.then done))))))
+
+
 (t/deftest simple-sync-disposal
   (t/testing "Synchronous sink create and then dispose does not trigger sink-f"
     (let [[src-calls src-f] (spy (fn [_ x] x))

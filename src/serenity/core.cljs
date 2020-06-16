@@ -18,7 +18,8 @@
 
 
 (defprotocol IReactive
-  (-calculate [node]))
+  (-calculate [node])
+  (-connected? [node]))
 
 
 (defprotocol IOrdered
@@ -193,6 +194,8 @@
       (set! order n)))
 
   IReactive
+  (-connected? [_]
+    connected?)
   (-calculate [this]
     (let [edges-from-me-to-other' (js/Set.)
           old (harmony/deref state)]
@@ -273,10 +276,13 @@
       (set! order n)))
 
   IReactive
+  (-connected? [_]
+    connected?)
   (-calculate [this]
     (when connected?
       (let [old (harmony/deref state)]
-        ;; do this only because otherwise we'll start a new branch
+        ;; by dereferencing the node here, we will implicitly initialize their
+        ;; calculation and any child node's calculations as well
         (binding [*reactive-context* (js/Set.)]
           (harmony/set state @node))
 
@@ -348,7 +354,7 @@
   [input]
   (let [s (->Sink
            (harmony/ref nil)
-           true ;; `conected?`
+           false ;; `conected?`
            input ;; `node`
            {} ;; `watches`
            1 ;; default order
@@ -373,7 +379,11 @@
   (-dispose sink))
 
 
-
+(defn connected?
+  "Returns whether a sink or signal is actively connected to a source and
+  receiving updates."
+  [node]
+  (-connected? node))
 
 
 (defn send
