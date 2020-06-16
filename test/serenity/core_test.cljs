@@ -95,8 +95,23 @@
 
 
 (t/deftest simple-sync-disposal
+  (t/testing "Synchronous sink create and then dispose does not trigger sink-f"
+    (let [[src-calls src-f] (spy (fn [_ x] x))
+          src (s/source src-f
+                        :default 0)
+
+          [sink-calls sink-f] (spy #())
+          sink (s/sink src sink-f)]
+      (t/is (= 0 @src-calls))
+
+      (t/is (= 0 @sink-calls))
+
+      (s/dispose! sink))))
+
+
+(t/deftest sync-disposal
   (t/testing
-      "That a sink which is disposed in the same tick as messages are sent will not run"
+    "That a sink which is disposed in the same tick as messages are sent will not run"
     (t/async
      done
      (let [src (s/source (fn [_ x] x)
@@ -121,7 +136,7 @@
            (.then done))))))
 
 
-(t/deftest simple-async-disposal
+(t/deftest async-disposal
   (t/async
    done
    (let [src (s/source (fn [_ x] x)
@@ -144,6 +159,7 @@
          ;; `3` because it ran once on initial state
          (.then #(t/is (= 3 @sink!-calls)))
          (.then done)))))
+
 
 
 (t/deftest complex-graph-disposal)
@@ -228,6 +244,34 @@
               done)))))
 
 
+(t/deftest multiple-sinks
+  (t/async
+   done
+   (let [[src-calls src-f] (spy (fn [_ x] x))
+         src (s/source src-f
+                       :default 0)
+
+         [s0-calls s0-f] (spy #())
+         s0 (s/sink! src s0-f)
+
+         [s1-calls s1-f] (spy #())
+         s1 (s/sink! src s1-f)]
+     (t/is (= 0 @src-calls))
+
+     (queue-send src 1)
+     (queue-send src 2)
+     (queue-send src 3)
+     ;; dispose s1
+     (queue #(s/dispose! s1))
+     (queue-send src 4)
+
+     (-> (awaitp #(= 4 @src-calls))
+         (.then #(t/is (= 4 @src-calls)))
+         (.then #(t/is (= 5 @s0-calls)))
+         (.then #(t/is (= 4 @s1-calls)))
+         (.then done)))))
+
+
 (t/deftest simple-transducer)
 
 
@@ -235,6 +279,9 @@
 
 
 (t/deftest stateful-transducer)
+
+
+(t/deftest early-termination)
 
 
 (t/deftest on-connect)
