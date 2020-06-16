@@ -101,7 +101,7 @@
                         :default 0)
 
           [sink-calls sink-f] (spy #())
-          sink (s/sink src sink-f)]
+          sink (s/sink! src sink-f)]
       (t/is (= 0 @src-calls))
 
       (t/is (= 0 @sink-calls))
@@ -128,11 +128,10 @@
        (s/send src 4)
 
        (-> (js/Promise.all
-            #js [(awaitp #(= [0] @values))
-                 (awaitp #(= 1 @sink!-calls))])
-           (.then #(t/is (= [0] @values)))
-           ;; `1` because it ran once on initial state
-           (.then #(t/is (= 1 @sink!-calls)))
+            #js [(awaitp #(= [] @values))
+                 (awaitp #(= 0 @sink!-calls))])
+           (.then #(t/is (= [] @values)))
+           (.then #(t/is (= 0 @sink!-calls)))
            (.then done))))))
 
 
@@ -233,12 +232,9 @@
        ;; make it happen
        (s/sink! c (fn [_ _ _]))
 
-       (t/is (= [1 1 1 1]
-                [@a0-calls @a-calls @b-calls @c-calls]))
-
        (s/send src 1)
 
-       (await #(= [2 2 2 2]
+       (await #(= [1 1 1 1]
                   [@a0-calls @a-calls @b-calls @c-calls])
               "Expected calls match"
               done)))))

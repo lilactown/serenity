@@ -18,8 +18,7 @@
 
 
 (defprotocol IReactive
-  (-calculate [node])
-  (-connect [node]))
+  (-calculate [node]))
 
 
 (defprotocol IOrdered
@@ -210,13 +209,16 @@
           (set! edges-from-me-to-other edges-from-me-to-other')))
       ;; return edges to be calculated
       (when-not (= old (harmony/deref state))
-        edges-to-me)))
-  (-connect [this]
-    ))
+        edges-to-me))))
 
 
 ;; sinks are eager!
-(deftype Sink [state ^:mutable node ^:mutable watch ^:mutable order meta]
+(deftype Sink [state
+               ^:mutable connected?
+               ^:mutable node
+               ^:mutable watch
+               ^:mutable order
+               meta]
   IDeref
   (-deref [_]
     (when *reactive-context*
@@ -228,7 +230,8 @@
     ;; try to allow this sink and any of it's dependencies to be GCd
     (-remove-edge node this)
     (set! node nil)
-    (set! watch nil))
+    (set! watch nil)
+    (set! connected? false))
 
   IOrdered
   (-order [_] order)
@@ -238,20 +241,20 @@
 
   IReactive
   (-calculate [this]
-    (let [old (harmony/deref state)]
-      ;; do this only because otherwise we'll start a new branch
-      (binding [*reactive-context* (js/Set.)]
-        (harmony/set state @node))
+    (when connected?
+      (let [old (harmony/deref state)]
+        ;; do this only because otherwise we'll start a new branch
+        (binding [*reactive-context* (js/Set.)]
+          (harmony/set state @node))
 
-      (-add-edge node this)
-      (-set-order this (inc (-order node)))
+        (-add-edge node this)
+        (-set-order this (inc (-order node)))
 
-      ;; TODO run watch after commit
-      (watch this old (harmony/deref state))
+        ;; TODO run watch after commit
+        (watch this old (harmony/deref state))
 
-      ;; sinks never have edges-to-me
-      nil))
-  (-connect [this]))
+        ;; sinks never have edges-to-me
+        nil))))
 
 
 (defn source
@@ -300,7 +303,7 @@
     nil)))
 
 
-(defn sink
+(defn sink!
   "Creates a new sink node. Sinks listen to signals or sources and run
   `on-change` when a new value is available.
 
@@ -311,15 +314,18 @@
   [input on-change]
   (let [s (->Sink
            (harmony/ref nil)
-           input
-           on-change
+           true ;; `conected?`
+           input ;; `node`
+           on-change ;; `watch`
            1 ;; default order
            ;; meta
            nil)]
     ;; run sink eagerly
-    (-> (harmony/branch)
-        (.add #(-calculate s))
-        (.commit))
+    (js/queueMicrotask
+     (fn []
+       (-> (harmony/branch)
+           (.add #(-calculate s))
+           (.commit))))
     s))
 
 
