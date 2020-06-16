@@ -322,18 +322,15 @@
   By default, signals do not compute their values unless they are connected to
   a signal which is listened to by a sink.
 
-  Optionally, a transducer `xf` may be passed in to transform the result of the
-  `input-fn`."
-  ([input-fn] (signal (fn [_ input] input) nil input-fn))
-  ([rf input-fn] (signal rf nil input-fn))
-  ([rf xf input-fn]
+  Optionally, you may pass a reducing function `rf` as the first argument which
+  takes the current state and the next computed value by `input-fn` to return
+  the new state of the signal."
+  ([input-fn] (signal (fn [_ input] input) input-fn))
+  ([rf input-fn]
    (->Signal
     (harmony/ref nil)
     input-fn
-    ;; `rf`
-    (if (some? xf)
-      (xf rf)
-      rf)
+    rf
     false ;; `connected?`
     (js/Set.) ;; `edges-from-me-to-other`
     (js/Set.) ;; `edges-to-me`
