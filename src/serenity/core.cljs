@@ -81,23 +81,32 @@
 
 
 (defn- stabilize!
+  [connections messages]
+  (-> (harmony/branch)
+      ;; TODO rewrite this to add thunk for each calculation
+      (.add #(connect-sinks! connections))
+      (.add #(calculate-all-nodes!
+              (.reduce messages
+                       (fn [edges [src message]]
+                         (into edges (-receive src message)))
+                       #{})))
+      (.commit)))
+
+
+(defn maybe-stabilize!
   []
-  (try
-    (-> (harmony/branch)
-        ;; TODO rewrite this to add thunk for each calculation
-        (.add #(connect-sinks! connect-queue))
-        (.add #(calculate-all-nodes!
-                (.reduce message-queue
-                         (fn [edges [src message]]
-                           (into edges (-receive src message)))
-                         #{})))
-        (.commit))
-    (catch js/Object e
-      (js/setTimeout #(throw e) 0))
-    (finally
-      (set! message-queue #js [])
-      (set! connect-queue #js [])
-      (set! stabilize-this-tick? false))))
+  (when-not stabilize-this-tick?
+    (set! stabilize-this-tick? true)
+    (js/queueMicrotask
+     (fn []
+       (try
+         (stabilize! connect-queue message-queue)
+         (catch js/Object e
+           (js/setTimeout #(throw e) 0))
+         (finally
+           (set! message-queue #js [])
+           (set! connect-queue #js [])
+           (set! stabilize-this-tick? false)))))))
 
 
 (deftype Source [ref reducer edges meta]
@@ -351,7 +360,7 @@
   [input]
   (let [s (->Sink
            (harmony/ref nil)
-           false ;; `conected?`
+           true ;; `conected?`
            input ;; `node`
            {} ;; `watches`
            1 ;; default order
@@ -359,9 +368,7 @@
            nil)]
     ;; connect up to the graph
     (.push connect-queue s)
-    (when-not stabilize-this-tick?
-      (set! stabilize-this-tick? true)
-      (js/queueMicrotask stabilize!))
+    (maybe-stabilize!)
     s))
 
 
@@ -387,7 +394,5 @@
   "Sends a new message to the source asynchronously. Returns the source."
   [src message]
   (.push message-queue #js [src message])
-  (when-not stabilize-this-tick?
-    (set! stabilize-this-tick? true)
-    (js/queueMicrotask stabilize!))
+  (maybe-stabilize!)
   src)
