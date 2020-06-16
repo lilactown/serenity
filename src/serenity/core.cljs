@@ -19,6 +19,7 @@
 
 (defprotocol IReactive
   (-calculate [node])
+  (-connect [node])
   (-connected? [node]))
 
 
@@ -77,7 +78,7 @@
 (defn- connect-sinks!
   [sinks]
   (doseq [sink sinks]
-    (-calculate sink)))
+    (-connect sink)))
 
 
 (defn- stabilize!
@@ -205,6 +206,9 @@
   IReactive
   (-connected? [_]
     connected?)
+  (-connect [this]
+    (set! connected? true)
+    (-calculate this))
   (-calculate [this]
     (let [edges-from-me-to-other' (js/Set.)
           old (harmony/deref state)]
@@ -253,6 +257,7 @@
 ;; sinks are eager!
 (deftype Sink [state
                ^:mutable connected?
+               ^:mutable disposed?
                ^:mutable node
                ^:mutable watches
                ^:mutable order
@@ -276,7 +281,8 @@
     (-remove-edge node this)
     (set! node nil)
     (set! watches nil)
-    (set! connected? false))
+    (set! connected? false)
+    (set! disposed? true))
 
   IOrdered
   (-order [_] order)
@@ -287,6 +293,10 @@
   IReactive
   (-connected? [_]
     connected?)
+  (-connect [this]
+    (when-not disposed?
+      (set! connected? true)
+      (-calculate this)))
   (-calculate [this]
     (when connected?
       (let [old (harmony/deref state)]
@@ -357,18 +367,24 @@
   graph.
 
   To destroy and disconnect listening, use `dispose!` on the sink."
-  [input]
+  [input & {:keys [defer-connect?]
+            :or {defer-connect? true}}]
   (let [s (->Sink
            (harmony/ref nil)
-           true ;; `conected?`
+           false ;; `disposed?`
+           false ;; `connected?`
            input ;; `node`
            {} ;; `watches`
            1 ;; default order
            ;; meta
            nil)]
     ;; connect up to the graph
-    (.push connect-queue s)
-    (maybe-stabilize!)
+    (if defer-connect?
+      (do
+        (.push connect-queue s)
+        (maybe-stabilize!))
+      ;; synchronously stabilize!
+      (do (stabilize! #js [s] #js [])))
     s))
 
 
