@@ -41,7 +41,13 @@
 (def ^:dynamic *transaction*)
 
 
+(def connect-queue #js [])
+
+
 (def message-queue #js [])
+
+
+(def stabilize-this-tick? false)
 
 ;;
 ;; The general approach we use for optimally calculating nodes is a topological
@@ -65,6 +71,32 @@
         (disj! nodes node)
         (recur nodes
                (dec n))))))
+
+
+(defn- connect-sinks!
+  [sinks]
+  (doseq [sink sinks]
+    (-calculate sink)))
+
+
+(defn- stabilize!
+  []
+  (try
+    (-> (harmony/branch)
+        ;; TODO rewrite this to add thunk for each calculation
+        (.add #(connect-sinks! connect-queue))
+        (.add #(calculate-all-nodes!
+                (.reduce message-queue
+                         (fn [edges [src message]]
+                           (into edges (-receive src message)))
+                         #{})))
+        (.commit))
+    (catch js/Object e
+      (js/setTimeout #(throw e) 0))
+    (finally
+      (set! message-queue #js [])
+      (set! connect-queue #js [])
+      (set! stabilize-this-tick? false))))
 
 
 (deftype Source [ref reducer edges meta]
@@ -122,7 +154,7 @@
 
 ;; signals are lazy!
 (deftype Signal [state input-fn rf
-                 ^:mutable initialized?
+                 ^:mutable connected?
                  ^:mutable edges-to-me
                  ^:mutable edges-from-me-to-other
                  ^:mutable order
@@ -133,17 +165,11 @@
 
   IDeref
   (-deref [this]
-    (if (some? *reactive-context*)
-      (do (.add ^js *reactive-context* this)
-          (when-not initialized?
-            ;; calculate now since we're being lazy
-            (-calculate this)))
-      (when-not initialized?
-        ;; for REPLing, create branch and calculate
-        ;; TODO figure out a way not to set the value of state?
-        (-> (harmony/branch)
-            (.add #(-calculate this))
-            (.commit))))
+    (when (some? *reactive-context*)
+      (.add ^js *reactive-context* this)
+      (when-not connected?
+        ;; calculate now since we're being lazy
+        (-calculate this)))
     (let [v (harmony/deref state)]
       (if (reduced? v)
         @v
@@ -155,7 +181,7 @@
   (-remove-edge [this node]
     (.delete ^js edges-to-me node)
     (when (zero? (.-size ^js edges-to-me))
-      (set! initialized? false)
+      (set! connected? false)
       ;; not listened to by anyone, remove it from the graph
       (doseq [node edges-from-me-to-other]
         (-remove-edge node this))))
@@ -182,7 +208,7 @@
       ;; TODO this all needs to _after_ the transaction has committed.
       ;;
 
-      (set! initialized? true)
+      (set! connected? true)
       (if (reduced? (harmony/deref state))
         ;; if reduced, disconnect ourself from listening to any changes
         (do
@@ -216,7 +242,7 @@
 (deftype Sink [state
                ^:mutable connected?
                ^:mutable node
-               ^:mutable watch
+               ^:mutable watches
                ^:mutable order
                meta]
   IDeref
@@ -225,12 +251,19 @@
       (throw (ex-info "Cannot deref sink inside of a node" {})))
     (harmony/deref state))
 
+  IWatchable
+  ;; (-notify-watches [this old new])
+  (-add-watch [this key watch-fn]
+    (set! (.-watches this) (assoc watches key watch-fn)))
+  (-remove-watch [this key]
+    (set! (.-watches this) (dissoc watches key)))
+
   ISink
   (-dispose [this]
     ;; try to allow this sink and any of it's dependencies to be GCd
     (-remove-edge node this)
     (set! node nil)
-    (set! watch nil)
+    (set! watches nil)
     (set! connected? false))
 
   IOrdered
@@ -251,7 +284,8 @@
         (-set-order this (inc (-order node)))
 
         ;; TODO run watch after commit
-        (watch this old (harmony/deref state))
+        (doseq [[k f] watches]
+          (f k this old (harmony/deref state)))
 
         ;; sinks never have edges-to-me
         nil))))
@@ -294,7 +328,7 @@
     (if (some? xf)
       (xf rf)
       rf)
-    false ;; `initialized?`
+    false ;; `connected?`
     (js/Set.) ;; `edges-from-me-to-other`
     (js/Set.) ;; `edges-to-me`
     ;; assume at least order 1
@@ -303,7 +337,7 @@
     nil)))
 
 
-(defn sink!
+(defn sink
   "Creates a new sink node. Sinks listen to signals or sources and run
   `on-change` when a new value is available.
 
@@ -311,21 +345,20 @@
   graph.
 
   To destroy and disconnect listening, use `dispose!` on the sink."
-  [input on-change]
+  [input]
   (let [s (->Sink
            (harmony/ref nil)
            true ;; `conected?`
            input ;; `node`
-           on-change ;; `watch`
+           {} ;; `watches`
            1 ;; default order
            ;; meta
            nil)]
-    ;; run sink eagerly
-    (js/queueMicrotask
-     (fn []
-       (-> (harmony/branch)
-           (.add #(-calculate s))
-           (.commit))))
+    ;; connect up to the graph
+    (.push connect-queue s)
+    (when-not stabilize-this-tick?
+      (set! stabilize-this-tick? true)
+      (js/queueMicrotask stabilize!))
     s))
 
 
@@ -340,27 +373,14 @@
   (-dispose sink))
 
 
-(defn- stabilize!
-  []
-  (try
-    (-> (harmony/branch)
-        ;; TODO rewrite this to add thunk for each calculation
-        (.add #(calculate-all-nodes!
-                (.reduce message-queue
-                         (fn [edges [src message]]
-                           (into edges (-receive src message)))
-                         #{})))
-        (.commit))
-    (catch js/Object e
-      (js/setTimeout #(throw e) 0))
-    (finally
-      (set! message-queue #js []))))
+
 
 
 (defn send
   "Sends a new message to the source asynchronously. Returns the source."
   [src message]
   (.push message-queue #js [src message])
-  (when (= 1 (.-length message-queue))
+  (when-not stabilize-this-tick?
+    (set! stabilize-this-tick? true)
     (js/queueMicrotask stabilize!))
   src)

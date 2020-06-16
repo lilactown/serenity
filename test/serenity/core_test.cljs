@@ -78,10 +78,12 @@
 
          c (s/signal #(+ @a @b))
 
-         values (atom [])]
+         values (atom [])
 
-     (s/sink! c (fn [_ _ n]
-                  (swap! values conj n)))
+         sink (s/sink c)]
+
+     (add-watch sink ::test (fn [_ _ _ n]
+                              (swap! values conj n)))
 
      (queue-send src 1)
      (queue-send src 2)
@@ -101,7 +103,10 @@
                         :default 0)
 
           [sink-calls sink-f] (spy #())
-          sink (s/sink! src sink-f)]
+          sink (s/sink src)]
+
+      (add-watch sink ::test sink-f)
+
       (t/is (= 0 @src-calls))
 
       (t/is (= 0 @sink-calls))
@@ -117,21 +122,23 @@
      (let [src (s/source (fn [_ x] x)
                          :initial 0)
            values (atom [])
-           [sink!-calls sink!-f] (spy (fn [_ _ n]
+           [sink-calls sink-f] (spy (fn [_ _ n]
                                         (swap! values conj n)))
-           sink! (s/sink! src sink!-f)]
+           sink (s/sink src)]
+
+       (add-watch sink ::test sink-f)
 
        (s/send src 1)
        (s/send src 2)
-       (s/dispose! sink!)
+       (s/dispose! sink)
        (s/send src 3)
        (s/send src 4)
 
        (-> (js/Promise.all
             #js [(awaitp #(= [] @values))
-                 (awaitp #(= 0 @sink!-calls))])
+                 (awaitp #(= 0 @sink-calls))])
            (.then #(t/is (= [] @values)))
-           (.then #(t/is (= 0 @sink!-calls)))
+           (.then #(t/is (= 0 @sink-calls)))
            (.then done))))))
 
 
@@ -141,22 +148,23 @@
    (let [src (s/source (fn [_ x] x)
                        :initial 0)
          values (atom [])
-         [sink!-calls sink!-f] (spy (fn [_ _ n]
+         [sink-calls sink-f] (spy (fn [_ _ _ n]
                                       (swap! values conj n)))
-         sink! (s/sink! src sink!-f)]
+         sink (s/sink src)]
+     (add-watch sink ::test sink-f)
 
      (queue-send src 1)
      (queue-send src 2)
-     (queue #(s/dispose! sink!))
+     (queue #(s/dispose! sink))
      (queue-send src 3)
      (queue-send src 4)
 
      (-> (js/Promise.all
           #js [(awaitp #(= [0 1 2] @values))
-               (awaitp #(= 3 @sink!-calls))])
+               (awaitp #(= 3 @sink-calls))])
          (.then #(t/is (= [0 1 2] @values)))
          ;; `3` because it ran once on initial state
-         (.then #(t/is (= 3 @sink!-calls)))
+         (.then #(t/is (= 3 @sink-calls)))
          (.then done)))))
 
 
@@ -170,9 +178,12 @@
    (let [src (s/source (fn [_ x] x)
                        :initial 0)
          values (atom [])
-         [sink!-calls sink!-f] (spy (fn [_ _ n]
-                                      (swap! values conj n)))]
-     (s/sink! src sink!-f)
+         [sink-calls sink-f] (spy (fn [_ _ _ n]
+                                    (swap! values conj n)))
+
+         sink (s/sink src)]
+     (add-watch sink ::test sink-f)
+
      ;; send all in one batch
      (queue (fn []
               (s/send src 1)
@@ -181,10 +192,10 @@
               (s/send src 4)))
      (-> (js/Promise.all
           #js [(awaitp #(= [0 4] @values))
-               (awaitp #(= 2 @sink!-calls))])
+               (awaitp #(= 2 @sink-calls))])
          (.then #(t/is (= [0 4] @values)))
          ;; `2` because it ran once on initial state
-         (.then #(t/is (= 2 @sink!-calls)))
+         (.then #(t/is (= 2 @sink-calls)))
          (.then done)))))
 
 
@@ -196,8 +207,9 @@
          src (s/source src-f :initial {:asdf "jkl"})
          a (s/signal #(deref src))
          b (s/signal #(+ @a))
-         [sink!-calls sink!-f] (spy #())]
-     (s/sink! b sink!-f)
+         [sink-calls sink-f] (spy #())
+         sink (s/sink b)]
+     (add-watch sink ::test sink-f)
 
      (queue-send src nil)
      (queue-send src nil)
@@ -205,7 +217,7 @@
 
      (-> (awaitp #(= 4 @src-calls))
          (.then #(t/is (= 3 @src-calls)))
-         (.then #(t/is (= 1 @sink!-calls)))
+         (.then #(t/is (= 1 @sink-calls)))
          (.then done)))))
 
 
@@ -227,14 +239,15 @@
            b (s/signal b-f)
 
            [c-calls c-f] (spy #(+ @a @b))
-           c (s/signal c-f)]
+           c (s/signal c-f)
 
-       ;; make it happen
-       (s/sink! c (fn [_ _ _]))
+           sink (s/sink c)]
+
+       (add-watch sink ::test (fn [_ _ _]))
 
        (s/send src 1)
 
-       (await #(= [1 1 1 1]
+       (await #(= [2 2 2 2]
                   [@a0-calls @a-calls @b-calls @c-calls])
               "Expected calls match"
               done)))))
@@ -248,10 +261,13 @@
                        :default 0)
 
          [s0-calls s0-f] (spy #())
-         s0 (s/sink! src s0-f)
+         s0 (s/sink src)
 
          [s1-calls s1-f] (spy #())
-         s1 (s/sink! src s1-f)]
+         s1 (s/sink src)]
+     (add-watch s0 ::test s0-f)
+     (add-watch s1 ::test s1-f)
+
      (t/is (= 0 @src-calls))
 
      (queue-send src 1)
