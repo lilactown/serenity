@@ -66,6 +66,31 @@
 ;; Tests
 ;;
 
+(t/deftest deref-behavior
+  (t/async
+   done
+   (let [src (s/source (fn [_ x] x)
+                       :initial 0)
+         a (s/signal #(inc @src))]
+     (t/is (= 0 @src))
+     ;; `a` has not been connected yet, it is currently not calculating
+     (t/is (= nil @a))
+
+     (let [sink (s/sink a)]
+       ;; `sink` hasn't connected until the end of this tick
+       (t/is (= nil @a))
+       (t/is (= nil @sink))
+
+       (-> (awaitp #(some? @sink))
+           (.then #(t/is (= 1 @sink)))
+           (.then #(t/is (= 1 @a)))
+           (.then #(s/send src 1))
+           (.then (fn [] (awaitp #(= 2 @sink))))
+           (.then #(t/is (= 1 @src)))
+           (.then #(t/is (= 2 @sink)))
+           (.then #(t/is (= 2 @a)))
+           (.then done))))))
+
 
 (t/deftest basic-graph
   (t/async
