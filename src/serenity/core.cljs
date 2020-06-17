@@ -291,9 +291,9 @@
   IWatchable
   ;; (-notify-watches [this old new])
   (-add-watch [this key watch-fn]
-    (set! (.-watches this) (assoc watches key watch-fn)))
+    (set! watches (assoc watches key watch-fn)))
   (-remove-watch [this key]
-    (set! (.-watches this) (dissoc watches key)))
+    (set! watches (dissoc watches key)))
 
   ISink
   (-dispose [this]
