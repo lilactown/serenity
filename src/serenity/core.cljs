@@ -180,7 +180,7 @@
                  ^:mutable f
                  ^:mutable connected?
                  edges-to-me
-                 ^:mutable edges-from-me-to-other
+                 edges-from-me-to-other
                  ^:mutable order
                  meta]
   IMeta
@@ -209,7 +209,7 @@
       (set! connected? false)
       (set! f nil)
       ;; not listened to by anyone, remove it from the graph
-      (doseq [node edges-from-me-to-other]
+      (doseq [node (harmony/deref edges-from-me-to-other)]
         (-remove-edge node this))))
 
   IOrdered
@@ -230,10 +230,11 @@
 
   IReactive
   (-calculate [this]
+    ;; edges-from-me-to-another' is fine to have as mutable state since it's local
     (let [edges-from-me-to-other' (js/Set.)
           old (harmony/deref state)]
-      ;; run `f` with `*reactive-context*` set so that we can diff our edges-from-me-to-other
-      ;; and clean up any that have become stale
+      ;; run `f` with `*reactive-context*` set so that we can diff our
+      ;; edges-from-me-to-other and clean up any that have become stale
       (binding [*reactive-context* edges-from-me-to-other']
         (harmony/alter
          state
@@ -249,15 +250,17 @@
         ;; if reduced, disconnect ourself from listening to any changes
         (do
           ;; remove ourself from all edges-from-me-to-other
-          (doseq [node (set-union edges-from-me-to-other' edges-from-me-to-other)]
+          (doseq [node (set-union edges-from-me-to-other'
+                                  (harmony/deref edges-from-me-to-other))]
             (-remove-edge node this))
 
           ;; clear out to potentially help w/ GC
-          (set! edges-from-me-to-other nil))
+          (harmony/set edges-from-me-to-other nil))
 
         (do
           ;; remove ourself from edges-from-me-to-other that are stale
-          (doseq [node (set-difference edges-from-me-to-other edges-from-me-to-other')]
+          (doseq [node (set-difference (harmony/deref edges-from-me-to-other)
+                                       edges-from-me-to-other')]
             (-remove-edge node this))
 
           ;; expectation is that adding an edge is idempotent
@@ -268,7 +271,7 @@
             (-set-order this (inc (-order node))))
 
           ;; set current edges-from-me-to-other
-          (set! edges-from-me-to-other edges-from-me-to-other')))
+          (harmony/set edges-from-me-to-other edges-from-me-to-other')))
       ;; return edges to be calculated
       (when-not (= old (harmony/deref state))
         (harmony/deref edges-to-me)))))
@@ -388,9 +391,8 @@
     xf
     nil ;; `f`
     false ;; `connected?`
-    #_(js/Set.) ;; `edges-to-me`
     (harmony/ref #{})
-    (js/Set.) ;; `edges-from-me-to-other`
+    (harmony/ref (js/Set.)) ;; `edges-from-me-to-other`
     ;; assume at least order 1
     1
     ;; meta
