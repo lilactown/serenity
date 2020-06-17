@@ -164,7 +164,8 @@
 
 
 ;; signals are lazy!
-(deftype Signal [state input-fn rf
+(deftype Signal [state input-fn rf xf
+                 ^:mutable f
                  ^:mutable connected?
                  ^:mutable edges-to-me
                  ^:mutable edges-from-me-to-other
@@ -180,7 +181,7 @@
       (.add ^js *reactive-context* this)
       (when-not connected?
         ;; calculate now since we're being lazy
-        (-calculate this)))
+        (-connect this)))
     (let [v (harmony/deref state)]
       (if (reduced? v)
         @v
@@ -193,6 +194,7 @@
     (.delete ^js edges-to-me node)
     (when (zero? (.-size ^js edges-to-me))
       (set! connected? false)
+      (set! f nil)
       ;; not listened to by anyone, remove it from the graph
       (doseq [node edges-from-me-to-other]
         (-remove-edge node this))))
@@ -208,6 +210,9 @@
     connected?)
   (-connect [this]
     (set! connected? true)
+    (if (some? xf)
+      (set! f (xf rf))
+      (set! f rf))
     (-calculate this))
   (-calculate [this]
     (let [edges-from-me-to-other' (js/Set.)
@@ -217,7 +222,7 @@
       (binding [*reactive-context* edges-from-me-to-other']
         (harmony/alter
          state
-         rf
+         f
          (input-fn)))
 
       ;;
@@ -344,12 +349,15 @@
   Optionally, you may pass a reducing function `rf` as the first argument which
   takes the current state and the next computed value by `input-fn` to return
   the new state of the signal."
-  ([input-fn] (signal (fn [_ input] input) input-fn))
-  ([rf input-fn]
+  ([input-fn] (signal (fn [_ input] input) nil input-fn))
+  ([rf input-fn] (signal rf nil input-fn))
+  ([rf xf input-fn]
    (->Signal
     (harmony/ref nil)
     input-fn
     rf
+    xf
+    nil ;; `f`
     false ;; `connected?`
     (js/Set.) ;; `edges-from-me-to-other`
     (js/Set.) ;; `edges-to-me`

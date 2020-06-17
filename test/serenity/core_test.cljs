@@ -295,8 +295,6 @@
 
            sink (s/sink c :defer-connect? true)]
 
-       (add-watch sink ::test (fn [_ _ _]))
-
        (s/send src 1)
 
        (await #(= [2 2 2 2]
