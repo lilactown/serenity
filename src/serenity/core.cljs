@@ -127,10 +127,7 @@
 
   ISource
   (-receive [_ x]
-    (harmony/alter
-     ref
-     (fn [current]
-       (reducer current x)))
+    (harmony/alter ref reducer x)
     edges)
 
   IConnect
