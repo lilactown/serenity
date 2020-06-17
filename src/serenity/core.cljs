@@ -128,7 +128,7 @@
   ISource
   (-receive [_ x]
     (harmony/alter ref reducer x)
-    edges)
+    (harmony/deref edges))
 
   IConnect
   (-connected? [_]
@@ -142,11 +142,14 @@
 
   INode
   (-add-edge [_ node]
-    (.add ^js edges node)
+    #_(.add ^js edges node)
+    (harmony/alter edges #(conj % node))
     (set! connected? true))
   (-remove-edge [_ node]
-    (.delete ^js edges node)
-    (when (zero? (.-size ^js edges))
+    #_(.delete ^js edges node)
+    (harmony/alter edges #(disj % node))
+    (when (zero? #_(.-size ^js edges)
+                 (count (harmony/deref edges)))
       (set! connected? false))))
 
 
@@ -359,7 +362,7 @@
 
   `:initial` is an optional keyword arg for the initial state. Default `nil`."
   [reducer & {:keys [initial]}]
-  (->Source (harmony/ref initial) reducer false (js/Set.) nil))
+  (->Source (harmony/ref initial) reducer false (harmony/ref #{}) nil))
 
 
 (defn signal
