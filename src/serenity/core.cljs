@@ -179,7 +179,7 @@
 (deftype Signal [state input-fn rf xf
                  ^:mutable f
                  ^:mutable connected?
-                 ^:mutable edges-to-me
+                 edges-to-me
                  ^:mutable edges-from-me-to-other
                  ^:mutable order
                  meta]
@@ -201,10 +201,11 @@
 
   INode
   (-add-edge [_ node]
-    (.add ^js edges-to-me node))
+    (harmony/alter edges-to-me #(conj % node)))
   (-remove-edge [this node]
-    (.delete ^js edges-to-me node)
-    (when (zero? (.-size ^js edges-to-me))
+    (harmony/alter edges-to-me #(disj % node))
+    (when (zero? #_(.-size ^js edges-to-me)
+                 (count (harmony/deref edges-to-me)))
       (set! connected? false)
       (set! f nil)
       ;; not listened to by anyone, remove it from the graph
@@ -270,7 +271,7 @@
           (set! edges-from-me-to-other edges-from-me-to-other')))
       ;; return edges to be calculated
       (when-not (= old (harmony/deref state))
-        edges-to-me))))
+        (harmony/deref edges-to-me)))))
 
 
 ;; sinks are eager!
@@ -387,8 +388,9 @@
     xf
     nil ;; `f`
     false ;; `connected?`
+    #_(js/Set.) ;; `edges-to-me`
+    (harmony/ref #{})
     (js/Set.) ;; `edges-from-me-to-other`
-    (js/Set.) ;; `edges-to-me`
     ;; assume at least order 1
     1
     ;; meta
@@ -432,7 +434,9 @@
   dependents, it will also disconnect from the graph and not recalculate on
   changes to its dependencies."
   [sink]
-  (-dispose sink))
+  (-> (harmony/branch)
+      (.add #(-dispose sink))
+      (.commit)))
 
 
 (defn connected?
