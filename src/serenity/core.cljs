@@ -17,10 +17,13 @@
   (-receive [src x]))
 
 
-(defprotocol IReactive
-  (-calculate [node])
+(defprotocol IConnect
   (-connect [node])
   (-connected? [node]))
+
+
+(defprotocol IReactive
+  (-calculate [node]))
 
 
 (defprotocol IOrdered
@@ -110,7 +113,7 @@
            (set! stabilize-this-tick? false)))))))
 
 
-(deftype Source [ref reducer edges meta]
+(deftype Source [ref reducer ^:mutable connected? edges meta]
   IMeta
   (-meta [_]
     meta)
@@ -130,15 +133,24 @@
        (reducer current x)))
     edges)
 
+  IConnect
+  (-connected? [_]
+    connected?)
+  (-connect [_]
+    (set! connected? true))
+
   IOrdered
   (-order [_] 0)
   (-set-order [_ _] 0)
 
   INode
   (-add-edge [_ node]
-    (.add ^js edges node))
+    (.add ^js edges node)
+    (set! connected? true))
   (-remove-edge [_ node]
-    (.delete ^js edges node)))
+    (.delete ^js edges node)
+    (when (zero? (.-size ^js edges))
+      (set! connected? false))))
 
 
 (defn- set-difference
@@ -205,7 +217,7 @@
     (when (> n order)
       (set! order n)))
 
-  IReactive
+  IConnect
   (-connected? [_]
     connected?)
   (-connect [this]
@@ -214,6 +226,8 @@
       (set! f (xf rf))
       (set! f rf))
     (-calculate this))
+
+  IReactive
   (-calculate [this]
     (let [edges-from-me-to-other' (js/Set.)
           old (harmony/deref state)]
@@ -295,15 +309,12 @@
     (when (> n order)
       (set! order n)))
 
-  IReactive
+  IConnect
   (-connected? [_]
     connected?)
   (-connect [this]
     (when-not disposed?
       (set! connected? true)
-      (-calculate this)))
-  (-calculate [this]
-    (when connected?
       (let [old (harmony/deref state)]
         ;; by dereferencing the node here, we will implicitly initialize their
         ;; calculation and any child node's calculations as well
@@ -311,6 +322,23 @@
           (harmony/set state @node))
 
         (-add-edge node this)
+        (-set-order this (inc (-order node)))
+
+        ;; TODO run watch after commit
+        ;; maybe not do this on connect
+        (doseq [[k f] watches]
+          (f k this old (harmony/deref state)))
+
+        nil)))
+
+  IReactive
+  (-calculate [this]
+    (when connected?
+      (let [old (harmony/deref state)]
+        (binding [*reactive-context* (js/Set.)]
+          (harmony/set state @node))
+
+        ;; ensure that our order is correct after each calculation
         (-set-order this (inc (-order node)))
 
         ;; TODO run watch after commit
@@ -333,7 +361,7 @@
 
   `:initial` is an optional keyword arg for the initial state. Default `nil`."
   [reducer & {:keys [initial]}]
-  (->Source (harmony/ref initial) reducer (js/Set.) nil))
+  (->Source (harmony/ref initial) reducer false (js/Set.) nil))
 
 
 (defn signal
@@ -376,7 +404,7 @@
 
   To destroy and disconnect listening, use `dispose!` on the sink."
   [input & {:keys [defer-connect?]
-            :or {defer-connect? true}}]
+            :or {defer-connect? false}}]
   (let [s (->Sink
            (harmony/ref nil)
            false ;; `disposed?`
