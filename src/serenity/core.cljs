@@ -94,7 +94,7 @@
       (.commit)))
 
 
-(defn maybe-stabilize!
+(defn schedule-stabilize!
   []
   (when-not stabilize-this-tick?
     (set! stabilize-this-tick? true)
@@ -390,7 +390,7 @@
     (if defer-connect?
       (do
         (.push connect-queue s)
-        (maybe-stabilize!))
+        (schedule-stabilize!))
       ;; synchronously stabilize!
       (do (stabilize! #js [s] #js [])))
     s))
@@ -418,5 +418,5 @@
   "Sends a new message to the source asynchronously. Returns the source."
   [src message]
   (.push message-queue #js [src message])
-  (maybe-stabilize!)
+  (schedule-stabilize!)
   src)
