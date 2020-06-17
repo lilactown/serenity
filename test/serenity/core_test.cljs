@@ -133,18 +133,28 @@
      (t/is (false? (s/connected? a1)))
      (t/is (false? (s/connected? b)))
 
-     ;; connections are schedule for the end of this tick
+     ;; connections are scheduled for the end of this tick
      (let [sinkA (s/sink a1 :defer-connect? true)]
+       (t/is (false? (s/connected? src)))
        (t/is (false? (s/connected? b)))
        (t/is (false? (s/connected? a0)))
        (t/is (false? (s/connected? a1)))
        (t/is (false? (s/connected? sinkA)))
 
        (-> (awaitp #(s/connected? sinkA))
+           (.then #(t/is (true? (s/connected? src))))
            (.then #(t/is (false? (s/connected? b) "b still unconnected")))
            (.then #(t/is (true? (s/connected? a1))))
            (.then #(t/is (true? (s/connected? a0))))
            (.then #(t/is (true? (s/connected? sinkA))))
+
+           (.then #(s/dispose! sinkA))
+           (.then #(t/is (false? (s/connected? src))))
+           (.then #(t/is (false? (s/connected? b))))
+           (.then #(t/is (false? (s/connected? a0))))
+           (.then #(t/is (false? (s/connected? a1))))
+           (.then #(t/is (false? (s/connected? sinkA))))
+
            (.then done))))))
 
 
