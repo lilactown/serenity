@@ -134,6 +134,43 @@
      (t/is (false? (s/connected? b)))
 
      ;; connections are scheduled for the end of this tick
+     (let [sinkA (s/sink a1)]
+       (t/is (true? (s/connected? src)))
+       (t/is (false? (s/connected? b)))
+       (t/is (true? (s/connected? a0)))
+       (t/is (true? (s/connected? a1)))
+       (t/is (true? (s/connected? sinkA)))
+
+       (-> (awaitp #(s/connected? sinkA))
+           (.then #(t/is (true? (s/connected? src))))
+           (.then #(t/is (false? (s/connected? b) "b still unconnected")))
+           (.then #(t/is (true? (s/connected? a1))))
+           (.then #(t/is (true? (s/connected? a0))))
+           (.then #(t/is (true? (s/connected? sinkA))))
+
+           (.then #(s/dispose! sinkA))
+           (.then #(t/is (false? (s/connected? src))))
+           (.then #(t/is (false? (s/connected? b))))
+           (.then #(t/is (false? (s/connected? a0))))
+           (.then #(t/is (false? (s/connected? a1))))
+           (.then #(t/is (false? (s/connected? sinkA))))
+
+           (.then done))))))
+
+
+(t/deftest deferred-connected?
+  (t/async
+   done
+   (let [src (s/source (fn [_ x] x)
+                       :initial 0)
+         a0 (s/signal #(deref src))
+         a1 (s/signal #(deref a0))
+         b (s/signal #(deref src))]
+     (t/is (false? (s/connected? a0)))
+     (t/is (false? (s/connected? a1)))
+     (t/is (false? (s/connected? b)))
+
+     ;; connections are scheduled for the end of this tick
      (let [sinkA (s/sink a1 :defer-connect? true)]
        (t/is (false? (s/connected? src)))
        (t/is (false? (s/connected? b)))
@@ -228,7 +265,6 @@
          ;; `3` because it ran once on initial state
          (.then #(t/is (= 3 @sink-calls)))
          (.then done)))))
-
 
 
 (t/deftest complex-graph-disposal)
@@ -360,6 +396,15 @@
 
 
 (t/deftest cycles)
+
+
+(t/deftest error)
+
+
+(t/deftest batched-error)
+
+
+(t/deftest subscription-like)
 
 
 #_(t/run-tests)
