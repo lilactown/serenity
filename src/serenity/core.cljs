@@ -86,15 +86,15 @@
 
 (defn- stabilize!
   [connections messages]
+  ;; first connect all nodes
   (-> (harmony/branch)
-      ;; TODO rewrite this to add thunk for each calculation
       (.add #(connect-sinks! connections))
-      (.add #(calculate-all-nodes!
-              (.reduce messages
-                       (fn [edges [src message]]
-                         (into edges (-receive src message)))
-                       #{})))
-      (.commit)))
+      (.commit))
+  (doseq [[src message] messages]
+    (-> (harmony/branch)
+        ;; TODO rewrite this to add thunk for each calculation
+        (.add #(calculate-all-nodes! (-receive src message)))
+        (.commit))))
 
 
 (defn schedule-stabilize!
