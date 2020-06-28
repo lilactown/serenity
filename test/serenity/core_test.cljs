@@ -202,7 +202,7 @@
                         :default 0)
 
           [sink-calls sink-f] (spy #())
-          sink (s/sink src :defer-connect?)]
+          sink (s/sink src :defer-connect? false)]
 
       (add-watch sink ::test sink-f)
 
@@ -271,30 +271,30 @@
 
 
 (t/deftest batching
-  (t/async
-   done
-   (let [src (s/source (fn [_ x] x)
-                       :initial 0)
-         values (atom [])
-         [sink-calls sink-f] (spy (fn [_ _ _ n]
-                                    (swap! values conj n)))
+  (t/testing "sending a group of messages are calculated separately (no batching)"
+    (t/async
+     done
+     (let [src (s/source (fn [_ x] x)
+                         :initial 0)
+           values (atom [])
+           [sink-calls sink-f] (spy (fn [_ _ _ n]
+                                      (swap! values conj n)))
 
-         sink (s/sink src :defer-connect? true)]
-     (add-watch sink ::test sink-f)
+           sink (s/sink src :defer-connect? true)]
+       (add-watch sink ::test sink-f)
 
-     ;; send all in one batch
-     (queue (fn []
-              (s/send src 1)
-              (s/send src 2)
-              (s/send src 3)
-              (s/send src 4)))
-     (-> (js/Promise.all
-          #js [(awaitp #(= [0 4] @values))
-               (awaitp #(= 2 @sink-calls))])
-         (.then #(t/is (= [0 4] @values)))
-         ;; `2` because it ran once on initial state
-         (.then #(t/is (= 2 @sink-calls)))
-         (.then done)))))
+       ;; send all in one batch
+       (queue (fn []
+                (s/send src 1)
+                (s/send src 2)
+                (s/send src 3)
+                (s/send src 4)))
+       (-> (js/Promise.all
+            #js [(awaitp #(= [0 1 2 3 4] @values))
+                 (awaitp #(= 5 @sink-calls))])
+           (.then #(t/is (= [0 1 2 3 4] @values)))
+           (.then #(t/is (= 5 @sink-calls)))
+           (.then done))))))
 
 
 (t/deftest memoizing-outputs
