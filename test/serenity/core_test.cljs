@@ -76,10 +76,10 @@
      ;; `a` has not been connected yet, it is currently not calculating
      (t/is (= nil @a))
 
-     (let [sink (s/sink a :defer-connect? true)]
-       ;; `sink` hasn't connected until the end of this tick
-       (t/is (= nil @a))
-       (t/is (= nil @sink))
+     (let [sink (s/sink a)]
+       ;; `sink` connects immediately
+       (t/is (= 1 @a))
+       (t/is (= 1 @sink))
 
        (-> (awaitp #(some? @sink))
            (.then #(t/is (= 1 @sink)))
@@ -105,7 +105,7 @@
 
          values (atom [])
 
-         sink (s/sink c :defer-connect? true)]
+         sink (s/sink c)]
 
      (add-watch sink ::test (fn [_ _ _ n]
                               (swap! values conj n)))
@@ -115,8 +115,8 @@
      (queue-send src 3)
      (queue-send src 4)
 
-     (-> (awaitp #(= @values [2 4 6 8 10]))
-         (.then #(t/is (= @values [2 4 6 8 10])
+     (-> (awaitp #(= @values [4 6 8 10]))
+         (.then #(t/is (= @values [4 6 8 10])
                        "Expected values are equal"))
          (.then done)))))
 
@@ -171,12 +171,12 @@
      (t/is (false? (s/connected? b)))
 
      ;; connections are scheduled for the end of this tick
-     (let [sinkA (s/sink a1 :defer-connect? true)]
-       (t/is (false? (s/connected? src)))
+     (let [sinkA (s/sink a1)]
+       (t/is (true? (s/connected? src)))
        (t/is (false? (s/connected? b)))
-       (t/is (false? (s/connected? a0)))
-       (t/is (false? (s/connected? a1)))
-       (t/is (false? (s/connected? sinkA)))
+       (t/is (true? (s/connected? a0)))
+       (t/is (true? (s/connected? a1)))
+       (t/is (true? (s/connected? sinkA)))
 
        (-> (awaitp #(s/connected? sinkA))
            (.then #(t/is (true? (s/connected? src))))
@@ -223,7 +223,7 @@
            values (atom [])
            [sink-calls sink-f] (spy (fn [_ _ n]
                                         (swap! values conj n)))
-           sink (s/sink src :defer-connect? true)]
+           sink (s/sink src)]
 
        (add-watch sink ::test sink-f)
 
@@ -249,7 +249,7 @@
          values (atom [])
          [sink-calls sink-f] (spy (fn [_ _ _ n]
                                       (swap! values conj n)))
-         sink (s/sink src :defer-connect? true)]
+         sink (s/sink src)]
      (add-watch sink ::test sink-f)
 
      (queue-send src 1)
@@ -259,11 +259,10 @@
      (queue-send src 4)
 
      (-> (js/Promise.all
-          #js [(awaitp #(= [0 1 2] @values))
-               (awaitp #(= 3 @sink-calls))])
-         (.then #(t/is (= [0 1 2] @values)))
-         ;; `3` because it ran once on initial state
-         (.then #(t/is (= 3 @sink-calls)))
+          #js [(awaitp #(= [1 2] @values))
+               (awaitp #(= 2 @sink-calls))])
+         (.then #(t/is (= [1 2] @values)))
+         (.then #(t/is (= 2 @sink-calls)))
          (.then done)))))
 
 
@@ -280,7 +279,7 @@
            [sink-calls sink-f] (spy (fn [_ _ _ n]
                                       (swap! values conj n)))
 
-           sink (s/sink src :defer-connect? true)]
+           sink (s/sink src)]
        (add-watch sink ::test sink-f)
 
        ;; send all in one batch
@@ -290,10 +289,10 @@
                 (s/send src 3)
                 (s/send src 4)))
        (-> (js/Promise.all
-            #js [(awaitp #(= [0 1 2 3 4] @values))
-                 (awaitp #(= 5 @sink-calls))])
-           (.then #(t/is (= [0 1 2 3 4] @values)))
-           (.then #(t/is (= 5 @sink-calls)))
+            #js [(awaitp #(= [1 2 3 4] @values))
+                 (awaitp #(= 4 @sink-calls))])
+           (.then #(t/is (= [1 2 3 4] @values)))
+           (.then #(t/is (= 4 @sink-calls)))
            (.then done))))))
 
 
@@ -306,7 +305,7 @@
          a (s/signal #(deref src))
          b (s/signal #(+ @a))
          [sink-calls sink-f] (spy #())
-         sink (s/sink b :defer-connect? true)]
+         sink (s/sink b)]
      (add-watch sink ::test sink-f)
 
      (queue-send src nil)
@@ -315,7 +314,7 @@
 
      (-> (awaitp #(= 4 @src-calls))
          (.then #(t/is (= 3 @src-calls)))
-         (.then #(t/is (= 1 @sink-calls)))
+         (.then #(t/is (= 0 @sink-calls)))
          (.then done)))))
 
 
@@ -339,7 +338,7 @@
            [c-calls c-f] (spy #(+ @a @b))
            c (s/signal c-f)
 
-           sink (s/sink c :defer-connect? true)]
+           sink (s/sink c)]
 
        (s/send src 1)
 
@@ -357,10 +356,10 @@
                        :default 0)
 
          [s0-calls s0-f] (spy #())
-         s0 (s/sink src :defer-connect? true)
+         s0 (s/sink src)
 
          [s1-calls s1-f] (spy #())
-         s1 (s/sink src :defer-connect? true)]
+         s1 (s/sink src)]
      (add-watch s0 ::test s0-f)
      (add-watch s1 ::test s1-f)
 
@@ -375,8 +374,8 @@
 
      (-> (awaitp #(= 4 @src-calls))
          (.then #(t/is (= 4 @src-calls)))
-         (.then #(t/is (= 5 @s0-calls)))
-         (.then #(t/is (= 4 @s1-calls)))
+         (.then #(t/is (= 4 @s0-calls)))
+         (.then #(t/is (= 3 @s1-calls)))
          (.then done)))))
 
 

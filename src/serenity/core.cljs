@@ -407,8 +407,7 @@
   graph.
 
   To destroy and disconnect listening, use `dispose!` on the sink."
-  [input & {:keys [defer-connect?]
-            :or {defer-connect? false}}]
+  [input]
   (let [s (->Sink
            (harmony/ref nil)
            false ;; `disposed?`
@@ -419,12 +418,8 @@
            ;; meta
            nil)]
     ;; connect up to the graph
-    (if defer-connect?
-      (do
-        (.push connect-queue s)
-        (schedule-stabilize!))
-      ;; synchronously stabilize!
-      (do (stabilize! #js [s] #js [])))
+    ;; synchronously stabilize!
+    (stabilize! #js [s] #js [])
     s))
 
 
