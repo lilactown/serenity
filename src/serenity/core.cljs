@@ -46,9 +46,6 @@
 (def ^:dynamic *transaction*)
 
 
-(def connect-queue #js [])
-
-
 (def message-queue #js [])
 
 
@@ -104,12 +101,11 @@
     (js/queueMicrotask
      (fn []
        (try
-         (stabilize! connect-queue message-queue)
+         (stabilize! #js [] message-queue)
          (catch js/Object e
            (js/setTimeout #(throw e) 0))
          (finally
            (set! message-queue #js [])
-           (set! connect-queue #js [])
            (set! stabilize-this-tick? false)))))))
 
 

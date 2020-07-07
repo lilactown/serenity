@@ -199,10 +199,10 @@
   (t/testing "Synchronous sink create and then dispose does not trigger sink-f"
     (let [[src-calls src-f] (spy (fn [_ x] x))
           src (s/source src-f
-                        :default 0)
+                        :initial 0)
 
           [sink-calls sink-f] (spy #())
-          sink (s/sink src :defer-connect? false)]
+          sink (s/sink src)]
 
       (add-watch sink ::test sink-f)
 
@@ -353,7 +353,7 @@
    done
    (let [[src-calls src-f] (spy (fn [_ x] x))
          src (s/source src-f
-                       :default 0)
+                       :initial 0)
 
          [s0-calls s0-f] (spy #())
          s0 (s/sink src)
@@ -397,13 +397,35 @@
 (t/deftest cycles)
 
 
-(t/deftest error)
+(t/deftest error
+  (t/async
+   done
+   (let [src (s/source (fn [_ x] x) :initial 0)
+
+         sA (s/signal #(inc @src))
+
+         sB (s/signal #(if (= @src 3)
+                         (throw (js/Error "No 3s allowed"))
+                         (+ 100 @src)))
+
+         sC (s/signal #(+ @sA @sB))
+
+         sink (s/sink sC)]
+     s/send src 3)
+     (queue #(do (t/is (= 0 @src))
+                 (t/is (= 1 @sA))
+                 (t/is (= 100 @sB))
+                 (t/is (= 101 @sC))
+                 (done))))))
 
 
 (t/deftest batched-error)
 
 
 (t/deftest subscription-like)
+
+
+(t/deftest async-values)
 
 
 #_(t/run-tests)
