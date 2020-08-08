@@ -183,7 +183,7 @@
         (sp/-set-order this (inc (sp/-order node)))
 
         (doseq [[k f] @watches]
-          (global/defer #(f k this old @state)))
+          (global/defer f k this old @state))
 
         nil))))
 
@@ -249,7 +249,7 @@
 
 
 (defn send [src message]
-  (global/add-message src message))
+  (global/add-message! src message))
 
 
 (defn dispose! [sink]
@@ -279,13 +279,13 @@
                  (conj! nodes node'))
                (disj! nodes node)
                (recur nodes
-                      (dec n)))))
-         (doseq [f @global/effect-queue]
-           (f))))
+                      (dec n))))))
+       (doseq [[f args] @global/effect-queue]
+         (apply f args)))
       (catch Throwable e
         (reset! err e))
       (finally
-        (reset! global/mailbox (or leftover []))
-        (reset! global/effect-queue [])
+        (global/set-mailbox! (or leftover []))
+        (global/clear-effects)
         (when-some [e @err]
           (throw e))))))

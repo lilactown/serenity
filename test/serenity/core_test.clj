@@ -98,6 +98,7 @@
                            (swap! calls inc)))
 
     (s/send src 1)
+    (s/send src 2)
     (s/stabilize! src)
 
     (t/is (= 1 @calls))))
@@ -106,7 +107,7 @@
 (t/deftest errors
   (let [src (s/source 0)
         sigA0 (s/signal #(inc @src))
-        sigA1 (s/signal #(if (= 2 @sigA0)
+        sigA1 (s/signal #(if (= 3 @sigA0)
                           (throw (ex-info "oh no" {}))
                           "ok"))
         sigB (s/signal #(* 2 @src))
@@ -122,6 +123,7 @@
     (s/stabilize! src)
     (t/is (= 1 @sigA0))
     (t/is (= 0 @sigB))
+    (t/is (= 0 @calls))
 
 
     (s/send src 1)
@@ -135,6 +137,7 @@
     (t/is (= 1 @sigA0))
     (t/is (= 0 @sigB))
     (t/is (= 0 @calls))))
+
 
 (t/deftest disconnect-unused
   (let [src (s/source 0)
