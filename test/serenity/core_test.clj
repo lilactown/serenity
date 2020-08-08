@@ -186,3 +186,21 @@
     (t/is (= {:A 2
               :B 3
               :C 4} @calls))))
+
+
+(t/deftest multiple-sources
+  (let [src0 (s/source "0")
+        srcA (s/source "A")
+        sig (s/signal #(str @src0 @srcA))
+        snk (s/sink sig)]
+    (s/stabilize! src0 srcA)
+    (t/is (= "0A" @snk))
+
+    (s/send src0 "1")
+    (s/send srcA "B")
+
+    ;; stabilize only srcA
+    (s/stabilize! srcA)
+    (t/is (= "0B" @snk))
+    (s/stabilize! src0)
+    (t/is (= "1B" @snk))))
