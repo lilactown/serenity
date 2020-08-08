@@ -82,7 +82,6 @@
   (-connected? [_]
     @connected?)
   (-connect [this]
-    (prn :connect)
     (ref-set connected? true)
     (sp/-calculate this))
 
@@ -96,7 +95,6 @@
       (ref-set connected? true)
 
       (let [edges-from-me-to-other' (persistent! edges-from-me-to-other')]
-        (prn :edges-from-me-to-other' edges-from-me-to-other')
         (if (reduced? @state)
           (do
             (doseq [node (s/union edges-from-me-to-other'
@@ -122,7 +120,7 @@
 (deftype Sink [state ;; ref of T
                connected? ;; ref of bool
                disposed? ;; ref of bool
-               node ;; signal
+               node ;; ref of signal of T
                watches ;; atom of map
                order;; ref of int
                ]
@@ -145,8 +143,8 @@
 
   sp/ISink
   (-dispose [this]
-    (sp/-remove-edge node this)
     (dosync
+     (sp/-remove-edge @node this)
      (ref-set node nil)
      (ref-set connected? false)
      (ref-set disposed? true))
@@ -170,7 +168,8 @@
   sp/IReactive
   (-calculate [this]
     (when connected?
-      (let [old @state]
+      (let [old @state
+            node @node]
         ;; we ignore the resulting reactive-context since we know we only depend
         ;; on this one node
         (binding [*reactive-context* (transient #{})]
@@ -185,16 +184,19 @@
         nil))))
 
 
-(defn source [reducer & {:keys [initial]}]
-  (->Source
-   ;; state
-   (ref initial)
-   ;; reducer
-   reducer
-   ;; connected?
-   (ref false)
-   ;; edges
-   (ref #{})))
+(defn source
+  ([initial]
+   (source (fn [_ x] x) initial))
+  ([reducer initial]
+   (->Source
+    ;; state
+    (ref initial)
+    ;; reducer
+    reducer
+    ;; connected?
+    (ref false)
+    ;; edges
+    (ref #{}))))
 
 
 (defn signal
@@ -228,7 +230,7 @@
          ;; disposed?
          (ref false)
          ;; node
-         node
+         (ref node)
          ;; watches
          (atom {})
          ;; order
@@ -244,11 +246,14 @@
   (swap! mailbox conj [src message]))
 
 
+(defn dispose! [sink]
+  (sp/-dispose sink))
+
+
 (defn stabilize! []
   (doseq [[src msg] @mailbox]
     (dosync
-     (loop [nodes (apply poset sp/-order (doto (sp/-receive src msg)
-                                           (->> (prn :receive))))
+     (loop [nodes (apply poset sp/-order (sp/-receive src msg))
             ;; TODO remove governor
             n 100]
        (when-some [node (first nodes)]
