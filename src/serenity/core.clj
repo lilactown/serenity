@@ -2,25 +2,16 @@
   (:require
    [clojure.set :as s]
    [lilactown.poset :refer (poset)]
+   [serenity.impl.global :as global]
    [serenity.protocols :as sp])
   (:refer-clojure :exclude (send)))
 
 
-(def ^:dynamic *reactive-context* nil)
-
-
-(def effect-queue (atom []))
-
-(defn defer
-  [f]
-  (swap! effect-queue conj f))
-
-
-(deftype Source [state reducer connected? edges]
+(deftype Source [state reducer connected? edges on-connect on-disconnect]
   clojure.lang.IDeref
   (deref [this]
-    (when (some? *reactive-context*)
-      (conj! *reactive-context* this)
+    (when (some? global/*reactive-context*)
+      (conj! global/*reactive-context* this)
       (when-not @connected?
         (sp/-connect this)))
     @state)
@@ -33,8 +24,10 @@
   sp/IConnect
   (-connected? [_]
     @connected?)
-  (-connect [_]
-    (ref-set connected? true))
+  (-connect [this]
+    (ref-set connected? true)
+    (when (some? on-connect)
+      (on-connect this)))
 
   sp/IOrdered
   (-order [_] 0)
@@ -45,11 +38,13 @@
     (alter edges conj node)
     (ref-set connected? true)
     nil)
-  (-remove-edge [_ node]
+  (-remove-edge [this node]
     (alter edges disj node)
 
     (when (zero? (count @edges))
-      (ref-set connected? false))
+      (ref-set connected? false)
+      (when (some? on-disconnect)
+        (on-disconnect this)))
 
     nil))
 
@@ -59,8 +54,8 @@
                  order]
   clojure.lang.IDeref
   (deref [this]
-    (when (some? *reactive-context*)
-      (conj! *reactive-context* this)
+    (when (some? global/*reactive-context*)
+      (conj! global/*reactive-context* this)
       (when-not @connected?
         (sp/-connect this)))
     (let [current @state]
@@ -96,7 +91,7 @@
   (-calculate [this]
     (let [edges-from-me-to-other' (transient #{})
           current @state]
-      (binding [*reactive-context* edges-from-me-to-other']
+      (binding [global/*reactive-context* edges-from-me-to-other']
         (alter state reducer (input-fn)))
 
       (ref-set connected? true)
@@ -133,7 +128,7 @@
                ]
   clojure.lang.IDeref
   (deref [_]
-    (when (some? *reactive-context*)
+    (when (some? global/*reactive-context*)
       (throw (ex-info "Cannot reference sink inside of signal/sink")))
     @state)
 
@@ -179,14 +174,14 @@
             node @node]
         ;; we ignore the resulting reactive-context since we know we only depend
         ;; on this one node
-        (binding [*reactive-context* (transient #{})]
+        (binding [global/*reactive-context* (transient #{})]
           (ref-set state @node))
 
         (sp/-add-edge node this)
         (sp/-set-order this (inc (sp/-order node)))
 
         (doseq [[k f] @watches]
-          (defer #(f k this old @state)))
+          (global/defer #(f k this old @state)))
 
         nil))))
 
@@ -194,7 +189,7 @@
 (defn source
   ([initial]
    (source (fn [_ x] x) initial))
-  ([reducer initial]
+  ([reducer initial & {:keys [on-connect on-disconnect]}]
    (->Source
     ;; state
     (ref initial)
@@ -203,7 +198,11 @@
     ;; connected?
     (ref false)
     ;; edges
-    (ref #{}))))
+    (ref #{})
+    ;; on-connect
+    on-connect
+    ;; on-disconnect
+    on-disconnect)))
 
 
 (defn signal
@@ -246,11 +245,8 @@
         (dosync))))
 
 
-(def ^:private mailbox (atom []))
-
-
 (defn send [src message]
-  (swap! mailbox conj [src message]))
+  (global/add-message src message))
 
 
 (defn dispose! [sink]
@@ -265,10 +261,10 @@
   (let [err (atom nil)
         sources (set sources)
         {messages true
-         leftover false} (group-by #(boolean (some sources %)) @mailbox)]
+         leftover false} (group-by #(boolean (some sources %)) @global/mailbox)]
     (try
-      (doseq [[src msg] messages]
-        (dosync
+      (dosync
+       (doseq [[src msg] messages]
          (loop [nodes (apply poset sp/-order (sp/-receive src msg))
                 ;; TODO remove governor
                 n 100]
@@ -281,37 +277,12 @@
                (disj! nodes node)
                (recur nodes
                       (dec n)))))
-         (doseq [f @effect-queue]
+         (doseq [f @global/effect-queue]
            (f))))
       (catch Throwable e
         (reset! err e))
       (finally
-        (reset! mailbox (or leftover []))
+        (reset! global/mailbox (or leftover []))
+        (reset! global/effect-queue [])
         (when-some [e @err]
           (throw e))))))
-
-
-(comment
-  (def src (source (fn [_ x] x) 0))
-
-@src
-
-@(.-edges src)
-
-(def a (signal #(* @src 2)))
-
-@a
-
-(def snk (sink a))
-
-
-(add-watch snk :prn (fn [_ _ _ x] (prn :prn x)))
-
-
-(remove-watch snk :prn)
-
-
-(send src 3)
-
-(stabilize!)
-)

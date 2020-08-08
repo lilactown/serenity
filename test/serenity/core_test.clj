@@ -210,3 +210,24 @@
     (t/is (= "0B" @snk))
     (s/stabilize! src0)
     (t/is (= "1B" @snk))))
+
+
+(t/deftest on-connect-disconnect
+  (let [some-resource (atom nil)
+        start (fn [_] (reset! some-resource :on))
+        stop (fn [_] (reset! some-resource :off))
+
+        src (s/source
+             (fn [_ x] x)
+             :init
+             :on-connect start
+             :on-disconnect stop)
+        sig (s/signal #(deref src))]
+    ;; not started
+    (t/is (= nil @some-resource))
+
+    (let [snk (s/sink sig)]
+      (t/is (= :on @some-resource))
+
+      (s/dispose! snk)
+      (t/is (= :off @some-resource)))))
