@@ -125,7 +125,7 @@
                node ;; ref of signal of T
                watches ;; atom of map
                order;; ref of int
-               ]
+               on-dispose]
   clojure.lang.IDeref
   (deref [_]
     (when (some? global/*reactive-context*)
@@ -145,6 +145,8 @@
 
   sp/ISink
   (-dispose [this]
+    (when (some? on-dispose)
+      (on-dispose this))
     (dosync
      (sp/-remove-edge @node this)
      (ref-set node nil)
@@ -227,7 +229,7 @@
 
 
 (defn sink
-  [node]
+  [node & {:keys [on-dispose]}]
   (doto (->Sink
          ;; state
          (ref ::init)
@@ -240,7 +242,8 @@
          ;; watches
          (atom {})
          ;; order
-         (ref 1))
+         (ref 1)
+         on-dispose)
     (-> (sp/-connect)
         (dosync))))
 
