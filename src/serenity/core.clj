@@ -267,25 +267,34 @@
          leftover false} (group-by #(boolean (some sources %)) @global/mailbox)]
     (try
       (dosync
+       ;; for each message
        (doseq [[src msg] messages]
+         ;; loop over all nodes subscribed to the source
          (loop [nodes (apply poset sp/-order (sp/-receive src msg))
                 ;; TODO remove governor
                 n 100]
+           ;; when a node exists
            (when-some [node (first nodes)]
              (when (> n 0)
                (when (< n 80)
                  (prn :runaway))
+               ;; calculate the new node value, and for each node returned
                (doseq [node' (sp/-calculate node)]
+                 ;; add it to the nodes list to be looped over
                  (conj! nodes node'))
+               ;; remove the old node
                (disj! nodes node)
                (recur nodes
                       (dec n))))))
+       ;; run effects added by sinks
        (doseq [[f args] @global/effect-queue]
          (apply f args)))
       (catch Throwable e
         (reset! err e))
       (finally
+        ;; clear mailbox of messages that were consumed
         (global/set-mailbox! (or leftover []))
+        ;; clear all effects that were deferred
         (global/clear-effects)
         (when-some [e @err]
           (throw e))))))
