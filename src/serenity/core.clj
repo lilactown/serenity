@@ -9,6 +9,13 @@
 (def ^:dynamic *reactive-context* nil)
 
 
+(def effect-queue (atom []))
+
+(defn defer
+  [f]
+  (swap! effect-queue conj f))
+
+
 (deftype Source [state reducer connected? edges]
   clojure.lang.IDeref
   (deref [this]
@@ -179,7 +186,7 @@
         (sp/-set-order this (inc (sp/-order node)))
 
         (doseq [[k f] @watches]
-          (f k this old @state))
+          (defer #(f k this old @state)))
 
         nil))))
 
@@ -250,26 +257,39 @@
   (sp/-dispose sink))
 
 
+(defn connected? [node]
+  (sp/-connected? node))
+
+
 (defn stabilize! []
-  (doseq [[src msg] @mailbox]
-    (dosync
-     (loop [nodes (apply poset sp/-order (sp/-receive src msg))
-            ;; TODO remove governor
-            n 100]
-       (when-some [node (first nodes)]
-         (when (> n 0)
-           (when (< n 80)
-             (prn :runaway))
-           (doseq [node' (sp/-calculate node)]
-             (conj! nodes node'))
-           (disj! nodes node)
-           (recur nodes
-                  (dec n)))))))
-  (reset! mailbox []))
+  (let [err (atom nil)]
+    (try
+      (doseq [[src msg] @mailbox]
+        (dosync
+         (loop [nodes (apply poset sp/-order (sp/-receive src msg))
+                ;; TODO remove governor
+                n 100]
+           (when-some [node (first nodes)]
+             (when (> n 0)
+               (when (< n 80)
+                 (prn :runaway))
+               (doseq [node' (sp/-calculate node)]
+                 (conj! nodes node'))
+               (disj! nodes node)
+               (recur nodes
+                      (dec n)))))
+         (doseq [f @effect-queue]
+           (f))))
+      (catch Throwable e
+        (reset! err e))
+      (finally
+        (reset! mailbox [])
+        (when-some [e @err]
+          (throw e))))))
 
 
 (comment
-(def src (source (fn [_ x] x) :initial 0))
+  (def src (source (fn [_ x] x) 0))
 
 @src
 
@@ -288,7 +308,7 @@
 (remove-watch snk :prn)
 
 
-(send src 4)
+(send src 3)
 
 (stabilize!)
 )
