@@ -261,10 +261,13 @@
   (sp/-connected? node))
 
 
-(defn stabilize! []
-  (let [err (atom nil)]
+(defn stabilize! [& sources]
+  (let [err (atom nil)
+        sources (set sources)
+        {messages true
+         leftover false} (group-by #(boolean (some sources %)) @mailbox)]
     (try
-      (doseq [[src msg] @mailbox]
+      (doseq [[src msg] messages]
         (dosync
          (loop [nodes (apply poset sp/-order (sp/-receive src msg))
                 ;; TODO remove governor
@@ -283,7 +286,7 @@
       (catch Throwable e
         (reset! err e))
       (finally
-        (reset! mailbox [])
+        (reset! mailbox (or leftover []))
         (when-some [e @err]
           (throw e))))))
 
