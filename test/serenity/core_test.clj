@@ -57,7 +57,11 @@
     (t/is (= ::s/init @sig))
 
     ;; connect w/ a sink
-    (let [snk (s/sink sig)]
+    (let [snk (s/sink sig)
+          calls (atom 0)]
+      (add-watch snk :call (fn [_ _ o n]
+                             (prn o n)
+                             (swap! calls inc)))
       (t/is (= 2 @sig))
       (t/is (s/connected? src))
       (t/is (s/connected? sig))
@@ -67,6 +71,7 @@
       (s/stabilize! src)
 
       (t/is (= 3 @sig))
+      (t/is (= 1 @calls))
 
       (s/dispose! snk)
 
@@ -79,7 +84,8 @@
       (s/stabilize! src)
 
       ;; no change
-      (t/is (= 3 @sig)))))
+      (t/is (= 3 @sig))
+      (t/is (= 1 @calls)))))
 
 
 (t/deftest watch
